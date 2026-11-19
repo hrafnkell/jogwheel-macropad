@@ -22,31 +22,34 @@
 const Layer LAYERS[] = {
   // ---- 1: General ----------------------------------------------------------
   {"General", "Gen",
-   wheelSteps("Scroll", 24, scroll(1), scroll(-1)),
-   wheelSteps("Volume", 24, media(KEY_VOLUME_DECREMENT), media(KEY_VOLUME_INCREMENT)),
+   wheelSteps("Scroll", 24, scroll(1), scroll(-1)).accel(4),
+   wheelSteps("Volume", 24, media(KEY_VOLUME_DECREMENT), media(KEY_VOLUME_INCREMENT)).accel(2),
    {
      {"Copy", ctrl('c')}, {"Pste", ctrl('v')}, {"Cut", ctrl('x')}, {"Undo", ctrl('z')}, {"Redo", ctrlShift('z')},
      {"Prev", media(KEY_SCAN_PREVIOUS)}, {"Play", media(KEY_PLAY_PAUSE)}, {"Next", media(KEY_SCAN_NEXT)}, {"Mute", media(KEY_MUTE)}, {"Lock", gui('l')},
    }},
 
   // ---- 2: Kdenlive ---------------------------------------------------------
-  // Left = frame step, right = timeline zoom (Ctrl+wheel, mouse must be over timeline)
+  // Left = jog: slow = 1 frame/step, faster = up to 4 frames/step, spinning = 1 second/step (Shift+arrow)
+  // Right = timeline zoom (Ctrl+wheel, mouse must be over timeline)
+  // Sel = "Select Clip" (default shortcut +, sent from the keypad so it works on any keyboard layout)
   {"Kdenlive", "Kden",
-   wheelSteps("Frame", 48, key(KEY_LEFT_ARROW), key(KEY_RIGHT_ARROW)),
+   wheelSteps("Jog", 48, key(KEY_LEFT_ARROW), key(KEY_RIGHT_ARROW)).accel(4).fast(shift(KEY_LEFT_ARROW), shift(KEY_RIGHT_ARROW)),
    wheelSteps("Zoom", 16, scroll(-1, M_CTRL), scroll(1, M_CTRL)),
    {
      {"Play", key(' ')}, {"J", key('j')}, {"K", key('k')}, {"L", key('l')}, {"Razr", shift('r')},
-     {"In", key('i')}, {"Out", key('o')}, {"Del", key(KEY_DELETE)}, {"Undo", ctrl('z')}, {"Redo", ctrlShift('z')},
+     {"In", key('i')}, {"Out", key('o')}, {"Sel", key(KEY_KP_PLUS)}, {"Del", key(KEY_DELETE)}, {"Undo", ctrl('z')},
    }},
 
   // ---- 3: DaVinci Resolve --------------------------------------------------
-  // Left = frame step, right = timeline zoom (Alt+wheel; try M_CTRL if that does nothing)
+  // Left = jog (same acceleration as Kdenlive), right = timeline zoom (Alt+wheel; try M_CTRL if that does nothing)
+  // Sel = Shift+V "Select clip at playhead"
   {"Resolve", "Dvnc",
-   wheelSteps("Frame", 48, key(KEY_LEFT_ARROW), key(KEY_RIGHT_ARROW)),
+   wheelSteps("Jog", 48, key(KEY_LEFT_ARROW), key(KEY_RIGHT_ARROW)).accel(4).fast(shift(KEY_LEFT_ARROW), shift(KEY_RIGHT_ARROW)),
    wheelSteps("Zoom", 16, scroll(-1, M_ALT), scroll(1, M_ALT)),
    {
      {"Play", key(' ')}, {"J", key('j')}, {"K", key('k')}, {"L", key('l')}, {"Splt", ctrl('b')},
-     {"In", key('i')}, {"Out", key('o')}, {"Mark", key('m')}, {"Del", key(KEY_DELETE)}, {"Undo", ctrl('z')},
+     {"In", key('i')}, {"Out", key('o')}, {"Sel", shift('v')}, {"Del", key(KEY_DELETE)}, {"Undo", ctrl('z')},
    }},
 
   // ---- 4: Desktop / browser ------------------------------------------------
@@ -81,8 +84,8 @@ const Layer LAYERS[] = {
 
   // ---- 7: Numbers ----------------------------------------------------------
   {"Numbers", "Num",
-   wheelSteps("Up/Down", 24, key(KEY_UP_ARROW), key(KEY_DOWN_ARROW)),
-   wheelSteps("Lft/Rgt", 24, key(KEY_LEFT_ARROW), key(KEY_RIGHT_ARROW)),
+   wheelSteps("Up/Down", 24, key(KEY_UP_ARROW), key(KEY_DOWN_ARROW)).accel(3),
+   wheelSteps("Lft/Rgt", 24, key(KEY_LEFT_ARROW), key(KEY_RIGHT_ARROW)).accel(3),
    {
      {"1", key('1')}, {"2", key('2')}, {"3", key('3')}, {"4", key('4')}, {"5", key('5')},
      {"6", key('6')}, {"7", key('7')}, {"8", key('8')}, {"9", key('9')}, {"0", key('0')},

@@ -102,6 +102,10 @@ struct Encoder {
   uint8_t heldMods = 0;
   uint32_t lastStepAt = 0;
   uint32_t flashUntil = 0;
+  float speed = 0;        // smoothed speed, revolutions per second
+  uint32_t lastReadUs = 0;
+  uint8_t boost = 0;      // what the OLED should show: 0 = normal, N = xN, 255 = fast
+  uint8_t drawnBoost = 0;
   uint32_t lastRetry = 0;
 };
 
@@ -213,7 +217,18 @@ void processWheel(uint8_t idx, int32_t delta) {
           e.holding = true;
           e.heldMods = w.holdMods;
         }
-        tap(cw ? w.cw : w.ccw);
+        // Speed-dependent output
+        bool hasFast = w.fastCw.type != A_NONE;
+        if (hasFast && e.speed >= FAST_RPS) {
+          tap(cw ? w.fastCw : w.fastCcw);
+          e.boost = 255;
+        } else {
+          float f = (e.speed - ACCEL_START_RPS) / (ACCEL_FULL_RPS - ACCEL_START_RPS);
+          f = constrain(f, 0.0f, 1.0f);
+          uint8_t repeat = 1 + (uint8_t)(f * (w.accelMax - 1) + 0.5f);
+          for (uint8_t r = 0; r < repeat; r++) tap(cw ? w.cw : w.ccw);
+          e.boost = repeat > 1 ? repeat : 0;
+        }
         e.lastStepAt = now;
         e.flashUntil = now + 150;
       }
@@ -314,7 +329,15 @@ void drawCell(uint8_t i, const char *label, bool lit) {
   display.setTextColor(SSD1306_WHITE);
 }
 
-void drawWheelLabel(const char *s, bool right, bool lit) {
+void drawWheelLabel(const char *label, uint8_t boost, bool right, bool lit) {
+  // Show acceleration next to the label, on the side facing the screen centre
+  char tag[6] = "";
+  if (boost == 255) strcpy(tag, ">>");
+  else if (boost > 1) snprintf(tag, sizeof(tag), "x%u", boost);
+  char s[20];
+  if (!tag[0]) snprintf(s, sizeof(s), "%s", label);
+  else if (right) snprintf(s, sizeof(s), "%s %s", tag, label);
+  else snprintf(s, sizeof(s), "%s %s", label, tag);
   int w = strlen(s) * 6 - 1;
   int x = right ? 127 - w : 0;
   if (lit) {
@@ -352,8 +375,10 @@ void drawScreen() {
   } else {
     for (uint8_t w = 0; w < 2; w++) {
       drawnFlash[w] = encs[w].flashUntil > now;
+      if (!drawnFlash[w]) encs[w].boost = 0;
+      encs[w].drawnBoost = encs[w].boost;
       const char *lbl = encs[w].present ? (w ? L.right.label : L.left.label) : "(no enc)";
-      drawWheelLabel(lbl, w == 1, drawnFlash[w]);
+      drawWheelLabel(lbl, encs[w].boost, w == 1, drawnFlash[w]);
     }
     for (uint8_t i = 0; i < BTN_COUNT; i++) {
       const Action &a = L.buttons[i].action;
@@ -385,7 +410,7 @@ void updateScreen() {
   if (screenState == SCREEN_OFF) return;
 
   for (uint8_t w = 0; w < 2; w++)
-    if ((encs[w].flashUntil > now) != drawnFlash[w]) dirty = true;
+    if ((encs[w].flashUntil > now) != drawnFlash[w] || encs[w].boost != encs[w].drawnBoost) dirty = true;
 
   static uint32_t lastDraw = 0;
   if (dirty && now - lastDraw >= 40) {  // max 25 fps; each frame blocks I2C0 ~10 ms
@@ -462,10 +487,20 @@ void loop() {
   static uint32_t lastEnc = 0;
   if (now - lastEnc >= 2) {  // ~500 Hz wheel polling
     lastEnc = now;
+    uint32_t nowUs = micros();
     for (uint8_t w = 0; w < 2; w++) {
-      bool was = encs[w].present;
-      int32_t d = readDelta(encs[w]);
-      if (was != encs[w].present) dirty = true;
+      Encoder &e = encs[w];
+      bool was = e.present;
+      int32_t d = readDelta(e);
+      // Smoothed speed (rev/s), ~50 ms time constant
+      float dt = (nowUs - e.lastReadUs) * 1e-6f;
+      e.lastReadUs = nowUs;
+      if (dt > 0 && dt < 0.1f) {
+        float inst = abs(d) / 4096.0f / dt;
+        float a = min(1.0f, dt / 0.05f);
+        e.speed += (inst - e.speed) * a;
+      }
+      if (was != e.present) dirty = true;
       if (d) processWheel(w, d);
     }
   }

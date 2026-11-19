@@ -48,20 +48,30 @@ struct Button {
 enum WheelMode : uint8_t { W_NONE, W_STEP, W_MOUSE_X, W_MOUSE_Y };
 
 struct Wheel {
-  const char *label;  // max ~10 chars
+  const char *label;  // max ~8 chars
   WheelMode mode;
   int16_t perRev;     // W_STEP: steps per revolution. W_MOUSE_*: pixels per revolution (negative = reversed)
   Action ccw, cw;     // W_STEP: fired once per step
   uint8_t holdMods;   // W_STEP: modifiers held down while turning (released shortly after you stop) - e.g. Alt for Alt+Tab
+  uint8_t accelMax;   // W_STEP: turning faster repeats each step up to this many times (1 = off)
+  Action fastCcw, fastCw;  // W_STEP: optional - used instead of ccw/cw when spinning really fast
+
+  // Chainable tweaks:  wheelSteps(...).accel(4).fast(a, b)
+  constexpr Wheel accel(uint8_t maxRepeat) const {
+    Wheel w = *this; w.accelMax = maxRepeat; return w;
+  }
+  constexpr Wheel fast(Action fccw, Action fcw) const {
+    Wheel w = *this; w.fastCcw = fccw; w.fastCw = fcw; return w;
+  }
 };
 
 // Fire `ccw` / `cw` every 1/stepsPerRev of a turn
 constexpr Wheel wheelSteps(const char *label, int16_t stepsPerRev, Action ccw, Action cw, uint8_t holdMods = 0) {
-  return {label, W_STEP, stepsPerRev, ccw, cw, holdMods};
+  return {label, W_STEP, stepsPerRev, ccw, cw, holdMods, 1, none(), none()};
 }
-constexpr Wheel wheelMouseX(const char *label, int16_t pxPerRev) { return {label, W_MOUSE_X, pxPerRev, none(), none(), 0}; }
-constexpr Wheel wheelMouseY(const char *label, int16_t pxPerRev) { return {label, W_MOUSE_Y, pxPerRev, none(), none(), 0}; }
-constexpr Wheel wheelNone() { return {"", W_NONE, 0, none(), none(), 0}; }
+constexpr Wheel wheelMouseX(const char *label, int16_t pxPerRev) { return {label, W_MOUSE_X, pxPerRev, none(), none(), 0, 1, none(), none()}; }
+constexpr Wheel wheelMouseY(const char *label, int16_t pxPerRev) { return {label, W_MOUSE_Y, pxPerRev, none(), none(), 0, 1, none(), none()}; }
+constexpr Wheel wheelNone() { return {"", W_NONE, 0, none(), none(), 0, 1, none(), none()}; }
 
 // ---- Layers ---------------------------------------------------------------
 struct Layer {

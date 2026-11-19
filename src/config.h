@@ -19,6 +19,10 @@ constexpr uint8_t BOOT_BTN = 9;  // bottom-right: Fn + this for 3 s = USB bootlo
 constexpr bool INVERT_LEFT = false;
 constexpr bool INVERT_RIGHT = false;
 constexpr uint16_t LAYER_STEPS_PER_REV = 10;  // Fn + left wheel layer scrolling
+// Wheel acceleration, speeds in revolutions per second
+constexpr float ACCEL_START_RPS = 0.4f;  // below this: 1 action per step (precise)
+constexpr float ACCEL_FULL_RPS = 1.5f;   // at/above this: accelMax actions per step
+constexpr float FAST_RPS = 1.8f;         // above this: use the wheel's .fast() actions, if it has any
 constexpr uint32_t HOLD_MODS_RELEASE_MS = 700; // e.g. Alt in Alt+Tab is let go this long after you stop turning
 
 // ---- Timing ---------------------------------------------------------------
