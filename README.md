@@ -158,7 +158,7 @@ These are the built-in defaults ([`config/default_layers.json`](config/default_l
 | # | Layer | Left wheel | Right wheel | Buttons 1–5 | Buttons 6–10 |
 |---|---|---|---|---|---|
 | 1 | General | Scroll | Volume | Copy · Paste · Cut · Undo · Redo | Prev · Play/Pause · Next · Mute · Lock screen |
-| 2 | Kdenlive | Jog (frames → 1 s) | Timeline zoom (Ctrl+scroll) | Play · J · K · L · Razor (Shift+R) | In · Out · Select clip (+) · Delete · Undo |
+| 2 | Kdenlive | Jog (frames → 1 s) | Timeline zoom (Ctrl+scroll) | Play · J · K · L · Razor (Shift+R) | In · Out · Select clip (+) · Ripple delete (select + Shift+Del) · Undo |
 | 3 | Resolve | Jog (frames → 1 s) | Timeline zoom (Alt+scroll) | Play · J · K · L · Split (Ctrl+B) | In · Out · Select clip (Shift+V) · Delete · Undo |
 | 4 | Desktop | Window switcher (Alt+Tab) | Browser tabs (Ctrl+Tab) | Back · Forward · Reload · New tab · Close tab | Reopen tab · Find · Address bar · Fullscreen · Screenshot |
 | 5 | Gaming | Mouse look (X) | Weapon switch (scroll) | Esc · 1 · 2 · 3 · 4 | Tab · Q · E · R · F |
@@ -168,7 +168,7 @@ These are the built-in defaults ([`config/default_layers.json`](config/default_l
 **Video editing tips**
 
 - The zoom wheels send Ctrl/Alt + mouse wheel, so the mouse pointer must be over the timeline.
-- *Select clip* selects the clip under the playhead, so *Delete* removes it.
+- *Select clip* selects the clip under the playhead, so *Delete* removes it. In Kdenlive, *RDel* does both in one press: it selects the clip, then sends Shift+Delete.
 - **Draw** is an etch-a-sketch mode. Open a paint program, press *Draw* to lock the left mouse button, then turn both wheels.
 
 ## Customising
@@ -183,6 +183,7 @@ It's a single file, [`web/index.html`](web/index.html), so it also works offline
 
 - Click a key, a wheel or the screen on the pad drawing to edit it
 - **⏺ Rec** records a key combination; **Pick…** has media keys, mouse actions and common shortcuts
+- **+ Add key** turns a button into a key sequence (for example *select clip* then *Shift+Delete*); **+ Wait** adds a pause between steps
 - Add, duplicate, reorder and delete layers, and set which apps each one auto-switches for
 - **Wheel tuning** tab: the acceleration curve as a graph. Turn a wheel on the pad and a dot shows its live speed on the curve, so you can see exactly where acceleration kicks in
 - **Pad selects keys** mode: pressing a key or turning a wheel on the pad selects it in the editor (and the pad stops typing meanwhile)
@@ -215,6 +216,7 @@ Edit and save `layers.json`, then press **Fn + button 9** again to close the dri
 ```
 
 - **Actions** are key names joined with `+`, modifiers first: `ctrl+shift+z`, `alt+tab`, `f5`, `kp_plus`, `vol_up`, `play_pause`, `mouse_left`, `latch_left` (drag lock), `scroll_down:3`, or just `ctrl` to hold a modifier
+- **Key sequences** (buttons only): steps separated by commas, e.g. `"kp_plus, shift+delete"`. The steps are tapped in order and the last one is held while you hold the button. `wait:100` pauses 100 ms; up to 8 steps
 - **Wheel modes**: `steps` (an action every 1/`steps` of a turn), `mouse_x` / `mouse_y` (`px` per turn), `none`. `hold` keeps modifiers down while turning (e.g. `"hold": "alt"` + `tab` = window switcher)
 - `//` comments are allowed
 

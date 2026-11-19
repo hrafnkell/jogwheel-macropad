@@ -104,6 +104,12 @@ Mouse       mouse_left mouse_right mouse_middle      held while button held
             scroll_up scroll_down                    one notch; "scroll_down:3" = 3
             Modifiers work with mouse actions too:   "ctrl+scroll_up"
 
+Key sequences (buttons only): steps separated by commas run in order.
+            "kp_plus, shift+delete"      select clip, then ripple delete
+            "ctrl+a, wait:100, ctrl+c"   "wait:N" pauses N ms (1-5000)
+            Every step but the last is tapped; the last is held while the button
+            is held. Up to 8 steps. Use "comma" for the , key.
+
 Keys are sent as US keyboard POSITIONS. Letters, digits, arrows and F-keys are the
 same on most layouts, but symbols (minus, equal, brackets...) land on whatever your
 layout has in that spot. Keypad keys (kp_plus...) are the same on every layout.

@@ -6,6 +6,8 @@
 constexpr uint8_t NUM_BUTTONS = 10;
 constexpr uint8_t MAX_LAYERS = 16;
 constexpr uint8_t MAX_APPS = 8;
+constexpr uint8_t MAX_SEQ = 8;        // steps in a button key sequence
+constexpr uint16_t MAX_WAIT_MS = 5000;
 
 // Modifier bits
 enum : uint8_t { M_CTRL = 1, M_SHIFT = 2, M_ALT = 4, M_GUI = 8 };
@@ -17,6 +19,7 @@ enum ActType : uint8_t {
   A_MOUSE,        // mouse button (+ modifiers), held while button is held
   A_MOUSE_LATCH,  // mouse button, toggles on each press (drag lock)
   A_SCROLL,       // mouse wheel notches (+ modifiers); code = int8 notches, + = up
+  A_WAIT,         // pause inside a key sequence; code = milliseconds (buttons only)
 };
 
 struct Action {
@@ -37,9 +40,13 @@ struct Wheel {
   float accelStart = -1, accelFull = -1, accelCurve = -1, fastSpeed = -1;  // -1 = use global setting
 };
 
+// A button runs a sequence: every step but the last is tapped in order, the last
+// step is held while the button is held. A plain single action is a 1-step sequence.
 struct Button {
   char label[5] = "";
-  Action action;
+  Action seq[MAX_SEQ];
+  uint8_t len = 0;
+  const Action &last() const { return seq[len ? len - 1 : 0]; }
 };
 
 struct Layer {
@@ -67,6 +74,8 @@ extern Settings settings;
 
 // Parse an action string like "ctrl+shift+z". Returns false (and sets err) if invalid.
 bool parseAction(const char *s, Action &out, String &err);
+// Parse a key sequence: steps separated by commas, e.g. "kp_plus, wait:50, shift+delete".
+bool parseSequence(const char *s, Button &out, String &err);
 
 // Load a full config from JSON text. On a fatal error (bad JSON / no layers) the
 // current config is left untouched and false is returned. Non-fatal problems

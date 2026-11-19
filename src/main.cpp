@@ -62,6 +62,12 @@ void actionDown(const Action &a) {
       Mouse.move(0, 0, (int8_t)(uint8_t)a.code);
       modsUp(a.mods);
       break;
+    case A_WAIT:
+      for (uint32_t t0 = millis(); millis() - t0 < a.code;) {
+        rp2040.wdt_reset();
+        delay(1);
+      }
+      break;
     default: break;
   }
 }
@@ -85,6 +91,18 @@ void actionUp(const Action &a) {
 void tap(const Action &a) {
   actionDown(a);
   actionUp(a);
+}
+
+// Run a button's sequence: tap every step but the last, then press the last one
+// (held until seqUp). Returns the held step.
+const Action &seqDown(const Button &b) {
+  for (uint8_t k = 0; k + 1 < b.len; k++) tap(b.seq[k]);
+  if (b.len) actionDown(b.last());
+  return b.last();
+}
+
+void seqTap(const Button &b) {
+  for (uint8_t k = 0; k < b.len; k++) tap(b.seq[k]);
 }
 
 // ===========================================================================
@@ -334,9 +352,8 @@ void onPress(uint8_t i) {
     else if (i != BOOT_BTN && i >= 1 && i - 1 < (int)layers.size()) setLayer(i - 1);
     return;
   }
-  btnHeld[i] = layers[currentLayer].buttons[i].action;
   btnFired[i] = true;
-  actionDown(btnHeld[i]);
+  btnHeld[i] = seqDown(layers[currentLayer].buttons[i]);
 }
 
 void onRelease(uint8_t i) {
@@ -344,7 +361,7 @@ void onRelease(uint8_t i) {
   if (i == FN_BTN) {
     fnActive = false;
     layerAcc = 0;
-    if (!fnUsed && millis() - fnPressedAt < FN_TAP_MAX_MS) tap(layers[currentLayer].buttons[FN_BTN].action);
+    if (!fnUsed && millis() - fnPressedAt < FN_TAP_MAX_MS) seqTap(layers[currentLayer].buttons[FN_BTN]);
     return;
   }
   if (btnFired[i]) {
@@ -462,7 +479,7 @@ void drawScreen() {
       drawWheelLabel(lbl, encs[w].boost, w == 1, drawnFlash[w]);
     }
     for (uint8_t i = 0; i < BTN_COUNT; i++) {
-      const Action &a = L.buttons[i].action;
+      const Action &a = L.buttons[i].last();
       bool latched = a.type == A_MOUSE_LATCH && (latchedMouse & a.code);
       drawCell(i, L.buttons[i].label, btnState[i] || latched);
     }

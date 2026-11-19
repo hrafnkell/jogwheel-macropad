@@ -60,6 +60,13 @@ bool parseAction(const char *s, Action &out, String &err) {
   str.trim();
   str.toLowerCase();
   if (str.length() == 0 || str == "none") return true;
+  if (str.indexOf(',') >= 0) { err = "key sequences (a, b) only work on buttons - use \"comma\" for the , key"; return false; }
+  if (str.startsWith("wait:")) {
+    int ms = str.substring(5).toInt();
+    if (ms < 1 || ms > MAX_WAIT_MS) { err = "wait must be 1-5000 ms (\"" + String(s) + "\")"; return false; }
+    out = {A_WAIT, 0, (uint16_t)ms};
+    return true;
+  }
 
   uint8_t mods = 0;
   String last;
@@ -129,10 +136,48 @@ static void copyStr(char *dst, size_t size, const char *src) {
   dst[size - 1] = 0;
 }
 
+bool parseSequence(const char *s, Button &out, String &err) {
+  out.len = 0;
+  String str(s ? s : "");
+  int start = 0;
+  while (true) {
+    int p = str.indexOf(',', start);
+    String step = str.substring(start, p < 0 ? str.length() : p);
+    step.trim();
+    if (step.length() == 0) {
+      if (p < 0 && out.len == 0) return true;  // empty = no action
+      err = "empty step in \"" + str + "\"";
+      out.len = 0;
+      return false;
+    }
+    if (out.len >= MAX_SEQ) { err = "more than " + String(MAX_SEQ) + " steps"; out.len = 0; return false; }
+    if (!parseAction(step.c_str(), out.seq[out.len], err)) { out.len = 0; return false; }
+    out.len++;
+    if (p < 0) return true;
+    start = p + 1;
+  }
+}
+
 static void readAction(JsonVariantConst v, Action &out, const String &where, std::vector<String> &errors) {
   if (v.isNull()) { out = Action(); return; }
   String err;
   if (!parseAction(v.as<const char *>(), out, err)) errors.push_back(where + ": " + err);
+  else if (out.type == A_WAIT) { errors.push_back(where + ": wait only works in button sequences"); out = Action(); }
+}
+
+// Button action: a string ("a, b") or an array of strings (["a", "b"])
+static void readButtonAction(JsonVariantConst v, Button &b, const String &where, std::vector<String> &errors) {
+  String s;
+  if (v.is<JsonArrayConst>()) {
+    for (JsonVariantConst x : v.as<JsonArrayConst>()) {
+      if (s.length()) s += ",";
+      s += x.as<const char *>() ? x.as<const char *>() : "";
+    }
+  } else if (!v.isNull()) {
+    s = v.as<const char *>() ? v.as<const char *>() : "";
+  }
+  String err;
+  if (!parseSequence(s.c_str(), b, err)) errors.push_back(where + ": " + err);
 }
 
 static float optFloat(JsonVariantConst v, float dflt) { return v.is<float>() || v.is<int>() ? v.as<float>() : dflt; }
@@ -226,7 +271,7 @@ bool loadConfig(const char *json, size_t len, std::vector<String> &errors) {
     for (JsonVariantConst b : btns) {
       if (i >= NUM_BUTTONS) break;
       copyStr(l.buttons[i].label, sizeof(l.buttons[i].label), b["label"] | "");
-      readAction(b["action"], l.buttons[i].action, where + " button " + String(i + 1), errors);
+      readButtonAction(b["action"], l.buttons[i], where + " button " + String(i + 1), errors);
       i++;
     }
     ls.push_back(l);

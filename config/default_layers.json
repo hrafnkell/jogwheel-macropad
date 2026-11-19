@@ -47,7 +47,7 @@
         { "label": "In",   "action": "i" },
         { "label": "Out",  "action": "o" },
         { "label": "Sel",  "action": "kp_plus" },
-        { "label": "Del",  "action": "delete" },
+        { "label": "RDel", "action": "kp_plus, shift+delete" },
         { "label": "Undo", "action": "ctrl+z" }
       ]
     },

@@ -105,6 +105,10 @@ details[open] summary { margin-bottom: 10px; }
 .rec { white-space: nowrap; }
 .rec.on { background: var(--danger); color: #fff; border-color: var(--danger); }
 .pick { width: auto; max-width: 110px; }
+.step { display: grid; grid-template-columns: 16px 1fr; gap: 0 6px; align-items: center; margin-bottom: 6px; }
+.step .num { font: 600 12px var(--mono); color: var(--muted); text-align: right; }
+.step .err-msg { grid-column: 2; }
+.seq-tools { margin: 2px 0 6px 22px; }
 canvas.graph { width: 100%; height: 170px; display: block; background: var(--panel2); border-radius: 8px; border: 1px solid var(--border); }
 .graph-legend { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 4px; }
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -216,9 +220,15 @@ const MOUSE = ['mouse_left', 'mouse_right', 'mouse_middle'];
 const LATCH = ['latch_left', 'latch_right', 'latch_middle'];
 
 // Returns null if valid, otherwise an error string.
-function actionError(s) {
+function actionError(s, allowWait = false) {
   s = (s || '').trim().toLowerCase();
   if (!s || s === 'none') return null;
+  if (s.includes(',')) return 'key sequences (a, b) only work on buttons - use "comma" for the , key';
+  const w = s.match(/^wait:(.*)$/);
+  if (w) {
+    if (!allowWait) return 'wait only works in button sequences';
+    return /^\d+$/.test(w[1]) && +w[1] >= 1 && +w[1] <= 5000 ? null : 'wait must be 1-5000 ms';
+  }
   const parts = s.split('+').map(p => p.trim());
   if (parts.some(p => !p)) return 'empty key name (use kp_plus for "+")';
   const last = parts.pop();
@@ -233,6 +243,22 @@ function actionError(s) {
   const m = last.match(/^scroll_(up|down)(?::(\d+))?$/);
   if (m) return (m[2] && (+m[2] < 1 || +m[2] > 127)) ? 'scroll amount must be 1-127' : null;
   return `unknown key "${last}"`;
+}
+// Button actions are key sequences: steps separated by commas.
+const MAX_SEQ = 8;
+function splitSteps(s) {
+  s = Array.isArray(s) ? s.join(',') : (s || '');
+  return s.trim() ? s.split(',').map(x => x.trim()) : [];
+}
+function seqError(s) {
+  const steps = splitSteps(s);
+  if (steps.length > MAX_SEQ) return `more than ${MAX_SEQ} steps`;
+  for (const [k, st] of steps.entries()) {
+    if (!st) return 'empty step';
+    const e = actionError(st, true);
+    if (e) return steps.length > 1 ? `step ${k + 1}: ${e}` : e;
+  }
+  return null;
 }
 function isModsOnly(s) {
   s = (s || '').trim().toLowerCase();
@@ -274,6 +300,7 @@ const QUICK_PICKS = {
   'Modifier only': ['ctrl', 'shift', 'alt', 'gui'],
   'Nothing': ['none'],
 };
+const WAIT_PICKS = { 'Pause (sequences)': ['wait:20', 'wait:50', 'wait:100', 'wait:250', 'wait:500', 'wait:1000'] };
 
 // ===========================================================================
 // State
@@ -326,7 +353,7 @@ function normalize(c) {
   c.settings = Object.assign({}, DEFAULT_SETTINGS, c.settings || {});
   c.layers = (c.layers || []).map(l => {
     l.apps = l.apps || [];
-    l.buttons = l.buttons || [];
+    l.buttons = (l.buttons || []).map(b => Array.isArray(b.action) ? { ...b, action: splitSteps(b.action).join(', ') } : b);
     while (l.buttons.length < 10) l.buttons.push({ label: '', action: '' });
     l.left = l.left || { label: '', mode: 'none' };
     l.right = l.right || { label: '', mode: 'none' };
@@ -357,7 +384,7 @@ function collectErrors() {
   if (!cfg) return errs;
   cfg.layers.forEach((l, li) => {
     const where = `Layer ${li + 1} (${l.name || '?'})`;
-    l.buttons.slice(0, 10).forEach((b, i) => { const e = actionError(b.action); if (e) errs.push(`${where} button ${i + 1}: ${e}`); });
+    l.buttons.slice(0, 10).forEach((b, i) => { const e = seqError(b.action); if (e) errs.push(`${where} button ${i + 1}: ${e}`); });
     for (const side of ['left', 'right']) {
       const w = l[side];
       if (w.mode === 'steps') for (const k of ['ccw', 'cw', 'fast_ccw', 'fast_cw', 'hold']) {
@@ -450,7 +477,7 @@ function renderLayers() {
       ${i === live.layer ? '<span class="live" title="The pad is on this layer">● pad</span>' : ''}
     </li>`).join('');
 }
-function actionShort(a) { return (a || '').trim() || '—'; }
+function actionShort(a) { return splitSteps(a).join(' › ') || '—'; }
 function wheelSummary(w) {
   if (!w || w.mode === 'none' || !w.mode) return 'off';
   if (w.mode === 'steps') return `${w.ccw || '—'} / ${w.cw || '—'}`;
@@ -460,7 +487,7 @@ function renderPad() {
   const L = cfg.layers[sel.layer];
   const onLive = live.layer === sel.layer;
   $('#keys').innerHTML = L.buttons.slice(0, 10).map((b, i) => {
-    const bad = actionError(b.action);
+    const bad = seqError(b.action);
     const cls = ['key', sel.target === 'btn' && sel.index === i ? 'sel' : '', onLive && live.btn.has(i) ? 'down' : '', bad ? 'err' : ''].join(' ');
     return `<div class="${cls}" data-target="btn" data-index="${i}" title="GP${BTN_GPIO[i]}${i === 0 ? ' · also Fn' : ''}">
       <span class="lbl">${esc(b.label) || '&nbsp;'}</span><span class="act">${esc(actionShort(b.action))}</span>
@@ -481,6 +508,10 @@ function renderPad() {
 }
 
 // ---- Inspector ------------------------------------------------------------
+function pickOptions(withWait) {
+  return Object.entries(withWait ? { ...QUICK_PICKS, ...WAIT_PICKS } : QUICK_PICKS).map(([g, list]) =>
+    `<optgroup label="${g}">${list.map(a => `<option value="${a}">${a}</option>`).join('')}</optgroup>`).join('');
+}
 function actionField(id, label, value, hint) {
   const err = actionError(value);
   const opts = Object.entries(QUICK_PICKS).map(([g, list]) =>
@@ -500,11 +531,13 @@ function text(id, label, value, max, hint = '') {
 
 function renderInspector() {
   const L = cfg.layers[sel.layer], el = $('#inspector');
+  const selKey = `${sel.layer}:${sel.target}:${sel.index}`;
+  if (seqDraftFor !== selKey) { seqDraft = null; seqDraftFor = selKey; }
   if (sel.target === 'btn') {
     const b = L.buttons[sel.index];
     el.innerHTML = `<h2>Button ${sel.index + 1} · ${esc(L.name)}</h2>
       ${text('bLabel', 'Label (shown on the OLED, max 4)', b.label, 4)}
-      ${actionField('bAction', 'Action', b.action, 'Held while the button is held. Modifiers first: <kbd>ctrl+shift+z</kbd>')}
+      ${sequenceField(b)}
       ${sel.index === 0 ? '<p class="hint">This is also the <b>Fn</b> key: its action fires when you tap and release it.</p>' : ''}
       ${sel.index === 8 ? '<p class="hint">Fn + this button opens the pad\'s USB drive.</p>' : ''}
       ${sel.index === 9 ? '<p class="hint">Fn + this button held for 3 s reboots into the USB bootloader.</p>' : ''}`;
@@ -519,6 +552,33 @@ function renderInspector() {
       <p class="hint">Click a key or a wheel on the pad to edit it.</p>`;
   }
   wireInspector();
+}
+
+// Button key sequence editor. seqDraft holds the step list while a new, still
+// empty step is being added (empty steps are dropped when it's committed).
+let seqDraft = null, seqDraftFor = '';
+function sequenceField(b) {
+  const steps = seqDraft || splitSteps(b.action);
+  if (!steps.length) steps.push('');
+  const n = steps.length, opts = pickOptions(true);
+  const rows = steps.map((st, k) => {
+    const err = st ? actionError(st, true) : null;
+    return `<div class="step"><span class="num">${n > 1 ? k + 1 : ''}</span>
+      <div class="row"><input type="text" id="bStep${k}" data-step="${k}" data-action data-wait value="${esc(st)}" placeholder="e.g. ctrl+shift+z" class="${err ? 'bad' : ''}" autocomplete="off" spellcheck="false">
+      <button class="rec" data-rec="bStep${k}" title="Press a key combination">⏺ Rec</button>
+      <select class="pick" data-pick="bStep${k}"><option value="">Pick…</option>${opts}</select>
+      ${n > 1 ? `<button class="small" data-stepmove="${k}" title="Move up" ${k ? '' : 'disabled'}>↑</button>
+      <button class="small" data-stepdel="${k}" title="Remove step">✕</button>` : ''}</div>
+      ${err ? `<div class="err-msg">${esc(err)}</div>` : ''}</div>`;
+  }).join('');
+  return `<div class="field"><label>${n > 1 ? `Key sequence (${n} steps)` : 'Action'}</label>${rows}
+    <div class="row seq-tools">
+      <button class="small" id="bAddKey" ${n >= MAX_SEQ ? 'disabled' : ''} title="Add a step and record it">+ Add key</button>
+      <button class="small" id="bAddWait" ${n >= MAX_SEQ ? 'disabled' : ''} title="Pause between steps">+ Wait</button>
+    </div>
+    <div class="hint">${n > 1
+      ? 'Steps run in order when you press the button. Each step is tapped, except the last one, which stays held while you hold the button.'
+      : 'Held while the button is held. Modifiers first: <kbd>ctrl+shift+z</kbd>. Add a key to make a sequence, e.g. <kbd>kp_plus</kbd> then <kbd>shift+delete</kbd>.'}</div></div>`;
 }
 
 function renderWheelInspector(el, L, side) {
@@ -576,7 +636,30 @@ function wireInspector() {
   if (sel.target === 'btn') {
     const b = L.buttons[sel.index];
     on('bLabel', 'input', e => { b.label = e.target.value; renderPad(); renderJson(); renderHeader(); });
-    on('bAction', 'change', e => { b.action = e.target.value.trim(); changed(); });
+    const steps = () => seqDraft ? [...seqDraft] : splitSteps(b.action);
+    const commit = list => { seqDraft = null; b.action = list.map(x => x.trim()).filter(Boolean).join(', '); changed(); };
+    const draft = list => { seqDraft = list; renderInspector(); };
+    document.querySelectorAll('#inspector [data-step]').forEach(i => i.addEventListener('change', () => {
+      const list = steps(); if (!list.length) list.push('');
+      list[+i.dataset.step] = i.value.trim(); commit(list);
+    }));
+    document.querySelectorAll('#inspector [data-stepdel]').forEach(x => x.addEventListener('click', () => {
+      const list = steps(); list.splice(+x.dataset.stepdel, 1); commit(list);
+    }));
+    document.querySelectorAll('#inspector [data-stepmove]').forEach(x => x.addEventListener('click', () => {
+      const list = steps(), k = +x.dataset.stepmove; [list[k - 1], list[k]] = [list[k], list[k - 1]]; commit(list);
+    }));
+    on('bAddKey', 'click', () => {
+      const list = steps(); if (!list.length) list.push('');
+      if (list[list.length - 1]) list.push('');
+      draft(list);
+      startRecording(document.querySelector(`[data-rec="bStep${list.length - 1}"]`));
+    });
+    on('bAddWait', 'click', () => {
+      const list = steps().filter(Boolean);
+      list.splice(Math.max(list.length - 1, 0), 0, 'wait:50');  // before the last step
+      commit(list);
+    });
   } else if (sel.target === 'wheel') {
     const side = sel.index ? 'right' : 'left', w = L[side];
     on('wLabel', 'input', e => { w.label = e.target.value; renderPad(); renderJson(); renderHeader(); });
@@ -623,7 +706,7 @@ function wireInspector() {
   }));
   document.querySelectorAll('#inspector [data-rec]').forEach(b => b.addEventListener('click', () => startRecording(b)));
   document.querySelectorAll('#inspector [data-action]').forEach(i => i.addEventListener('input', () => {
-    i.classList.toggle('bad', !!actionError(i.value));
+    i.classList.toggle('bad', !!actionError(i.value, 'wait' in i.dataset));
   }));
 }
 function setOpt(obj, key, val) { if (val) obj[key] = val; else delete obj[key]; }
