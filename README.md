@@ -40,10 +40,11 @@ The Pico shows up as a normal USB keyboard and mouse, so no drivers or host soft
 The case was designed in Onshape:
 **[Onshape document](https://cad.onshape.com/documents/e5c53d49cc4a243dfd63b13c/w/92bbd47e276381db8906be49/e/00501a3f613c48bb17cfad4c)**
 
-[`3d/jog-macro.3mf`](3d/jog-macro.3mf) contains the two case parts, ready to slice:
+[`3d/jog-macro.3mf`](3d/jog-macro.3mf) contains all the parts, ready to slice:
 
 - **case**: the top plate with the switch cut-outs, the OLED window and the two knob wells with sensor pockets
 - **base**: the bottom shell with the screw posts
+- **knob**: print two, each holding a bearing and a magnet
 
 Everything prints **without supports**.
 
@@ -228,7 +229,7 @@ src/
 hwtest/
   main.cpp         peripheral test sketch
 3d/
-  jog-macro.3mf    printable case (top plate + base)
+  jog-macro.3mf    printable parts (top plate, base, knob)
 img/               photos and renders
 ```
 
