@@ -1,5 +1,7 @@
 # Jogwheel Macropad
 
+![The assembled macropad](img/assembled.jpg)
+
 A USB macropad built on a Raspberry Pi Pico (RP2040). It has two magnetic jog wheels, a 128×64 OLED and 10 buttons, and switchable layers for video editing (Kdenlive, DaVinci Resolve), everyday desktop use, gaming and more.
 
 ```
@@ -26,10 +28,44 @@ The Pico shows up as a normal USB keyboard and mouse, so no drivers or host soft
 | Part | Notes |
 |---|---|
 | Raspberry Pi Pico (RP2040) | |
-| 2× AS5600 magnetic encoder | One per I2C bus. Both have the fixed address `0x36`, so they can't share a bus |
-| 2× diametric magnet | Mounted on the knob shafts above the AS5600s |
+| 2× AS5600 magnetic encoder module | One per I2C bus. Both have the fixed address `0x36`, so they can't share a bus |
+| 2× 3.75 × 3.75 × 2.8 mm magnet | One per knob, see [Knobs and magnets](#knobs-and-magnets) |
 | SSD1306 128×64 OLED (I2C, `0x3C`) | Shares I2C0 with the right wheel |
-| 10× momentary push buttons | Each connects its GPIO to GND when pressed; uses the internal pull-ups |
+| 10× Kailh Choc v1 (low profile) switches + keycaps | Snap into the top plate; each connects its GPIO to GND when pressed (internal pull-ups) |
+| 2× ball bearings | One per knob (see the photo below) |
+| Screws + heat-set inserts | Hold the top plate to the base |
+
+### 3D-printed case
+
+The case was designed in Onshape:
+**[Onshape document](https://cad.onshape.com/documents/e5c53d49cc4a243dfd63b13c/w/92bbd47e276381db8906be49/e/00501a3f613c48bb17cfad4c)**
+
+[`3d/jog-macro.3mf`](3d/jog-macro.3mf) contains the two case parts, ready to slice:
+
+- **case**: the top plate with the switch cut-outs, the OLED window and the two knob wells with sensor pockets
+- **base**: the bottom shell with the screw posts
+
+Everything prints **without supports**.
+
+| Top plate | Base |
+|---|---|
+| ![Top plate in Onshape](img/onshape-view.png) | ![Base in Onshape](img/onshape-base.png) |
+
+### Knobs and magnets
+
+![Knob removed, showing the bearing and the AS5600 underneath](img/knoboff.jpg)
+
+Each knob turns on a ball bearing and carries a small **3.75 × 3.75 × 2.8 mm magnet** in its centre, directly above the AS5600.
+
+The magnet is **push-fit sideways** into the knob. The AS5600 needs the field to rotate *in the plane of the chip*, so the magnet's north and south poles must sit side by side, parallel to the sensor, not one above the other. A normal block magnet is magnetised through its thickness, so inserting it on its side puts the poles in the right orientation without needing a diametric magnet.
+
+Use the [hardware test sketch](#hardware-test-sketch) to check the alignment: it shows the magnet status on the OLED. Aim for `OK` (not `WEAK`/`STRONG`/`NO MAG`), and check the angle sweeps smoothly through a full 360° turn.
+
+### Switches
+
+The Choc v1 switches simply snap into the top plate. The buttons are wired directly to the Pico's GPIOs (no diode matrix), each with its other leg to GND. The AS5600 modules sit under the knob wells in the top plate.
+
+![Inside: hand-wired switches, the two AS5600 modules and the Pico](img/wirymess.jpg)
 
 ### Wiring
 
@@ -191,6 +227,9 @@ src/
   config.h         ← pins and tuning
 hwtest/
   main.cpp         peripheral test sketch
+3d/
+  jog-macro.3mf    printable case (top plate + base)
+img/               photos and renders
 ```
 
 ## Troubleshooting
