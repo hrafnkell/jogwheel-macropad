@@ -1,21 +1,27 @@
 // ---------------------------------------------------------------------------
 // Jogwheel macropad firmware
-//   Key map:  layers.h      Hardware/tuning:  config.h
+//   Key map + tuning: layers.json (on the pad's USB drive / web configurator)
+//   Defaults:         config/default_layers.json
+//   Hardware:         config.h
 // ---------------------------------------------------------------------------
 #include <Arduino.h>
 #include <Wire.h>
 #include <EEPROM.h>
+#include <Keyboard.h>
+#include <Mouse.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-#include "actions.h"
+#include "app.h"
 #include "config.h"
-#include "layers.h"
+
+extern bool debugLog;
+#define BOOTLOG(...) do { if (debugLog && Serial) { Serial.printf(__VA_ARGS__); Serial.flush(); delay(5); } } while (0)
 
 // Poll HID every 1 ms instead of the core's default 10 ms (snappier wheels)
 int usb_hid_poll_interval = 1;
 
 constexpr uint8_t BTN_COUNT = sizeof(BTN_PINS);
-static_assert(BTN_COUNT == 10, "layers.h assumes 10 buttons");
+static_assert(BTN_COUNT == NUM_BUTTONS, "keymap assumes 10 buttons");
 
 // ===========================================================================
 // HID output
@@ -35,13 +41,17 @@ void modsUp(uint8_t m) {
 }
 
 void actionDown(const Action &a) {
+  if (hidMuted()) return;
   switch (a.type) {
     case A_KEY:
       modsDown(a.mods);
       if (a.code) Keyboard.press((uint8_t)a.code);
       break;
     case A_MEDIA: Keyboard.consumerPress(a.code); break;
-    case A_MOUSE: Mouse.press((uint8_t)a.code); break;
+    case A_MOUSE:
+      modsDown(a.mods);
+      Mouse.press((uint8_t)a.code);
+      break;
     case A_MOUSE_LATCH:
       latchedMouse ^= a.code;
       if (latchedMouse & a.code) Mouse.press((uint8_t)a.code);
@@ -57,13 +67,17 @@ void actionDown(const Action &a) {
 }
 
 void actionUp(const Action &a) {
+  if (hidMuted()) return;
   switch (a.type) {
     case A_KEY:
       if (a.code) Keyboard.release((uint8_t)a.code);
       modsUp(a.mods);
       break;
     case A_MEDIA: Keyboard.consumerRelease(); break;
-    case A_MOUSE: Mouse.release((uint8_t)a.code); break;
+    case A_MOUSE:
+      Mouse.release((uint8_t)a.code);
+      modsUp(a.mods);
+      break;
     default: break;
   }
 }
@@ -84,6 +98,17 @@ bool dirty = true;
 uint32_t lastActivity = 0;
 bool layerSavePending = false;
 uint32_t layerChangedAt = 0;
+bool safeMode = false;
+uint32_t bootedAt = 0;
+String toastMsg;
+uint32_t toastUntil = 0;
+
+void showToast(const String &msg, uint32_t ms) {
+  toastMsg = msg;
+  toastUntil = millis() + ms;
+  lastActivity = millis();
+  dirty = true;
+}
 
 // ===========================================================================
 // Encoders
@@ -92,9 +117,9 @@ constexpr uint8_t AS5600_ADDR = 0x36;
 
 struct Encoder {
   TwoWire *bus;
-  bool invert;
   bool present = false;
   uint16_t last = 0;
+  int32_t pos = 0, filt = 0;  // unwrapped raw position, and the deadbanded one
   int32_t acc = 0;        // step accumulator (raw counts)
   float mouseAcc = 0;     // fractional mouse pixels
   uint32_t activityAcc = 0;
@@ -102,14 +127,14 @@ struct Encoder {
   uint8_t heldMods = 0;
   uint32_t lastStepAt = 0;
   uint32_t flashUntil = 0;
+  uint32_t lastRetry = 0;
   float speed = 0;        // smoothed speed, revolutions per second
   uint32_t lastReadUs = 0;
-  uint8_t boost = 0;      // what the OLED should show: 0 = normal, N = xN, 255 = fast
+  uint8_t boost = 0;      // OLED: 0 = normal, N = xN, 255 = fast
   uint8_t drawnBoost = 0;
-  uint32_t lastRetry = 0;
 };
 
-Encoder encs[2] = {{&Wire1, INVERT_LEFT}, {&Wire, INVERT_RIGHT}};  // [0]=left, [1]=right
+Encoder encs[2] = {{&Wire1}, {&Wire}};  // [0]=left (I2C1), [1]=right (I2C0)
 
 bool readRaw(Encoder &e, uint16_t &raw) {
   e.bus->beginTransmission(AS5600_ADDR);
@@ -121,8 +146,9 @@ bool readRaw(Encoder &e, uint16_t &raw) {
   return true;
 }
 
-// Returns movement since last call in raw counts (4096/rev), + = clockwise
-int32_t readDelta(Encoder &e) {
+// Movement since last call in raw counts (4096/rev), + = clockwise
+int32_t readDelta(uint8_t idx) {
+  Encoder &e = encs[idx];
   uint16_t raw;
   if (!e.present) {
     if (millis() - e.lastRetry < 1000) return 0;
@@ -137,7 +163,15 @@ int32_t readDelta(Encoder &e) {
   if (d > 2048) d -= 4096;
   else if (d < -2048) d += 4096;
   e.last = raw;
-  return e.invert ? -d : d;
+  // Deadband: the sensor jitters +-1 count when still. Track the position with
+  // 1 count of hysteresis so jitter never reaches the actions / screensaver.
+  e.pos += d;
+  int32_t before = e.filt;
+  if (e.pos - e.filt > 1) e.filt = e.pos - 1;
+  else if (e.filt - e.pos > 1) e.filt = e.pos + 1;
+  d = e.filt - before;
+  bool inv = idx == 0 ? settings.invertLeft : settings.invertRight;
+  return inv ? -d : d;
 }
 
 void releaseWheelHold(Encoder &e) {
@@ -157,22 +191,40 @@ void resetWheels() {
 }
 
 // ===========================================================================
+// Buttons state (needed by releaseAllOutputs)
+// ===========================================================================
+bool btnState[BTN_COUNT] = {}, btnRaw[BTN_COUNT] = {};
+uint32_t btnChangedAt[BTN_COUNT] = {};
+bool btnFired[BTN_COUNT] = {};
+Action btnHeld[BTN_COUNT];  // action captured at press time (layer may change while held)
+
+void releaseAllOutputs() {
+  for (auto &e : encs) e.holding = false;
+  for (uint8_t i = 0; i < BTN_COUNT; i++) btnFired[i] = false;
+  memset(modRefs, 0, sizeof(modRefs));
+  latchedMouse = 0;
+  Keyboard.releaseAll();
+  Keyboard.consumerRelease();
+  Mouse.release(MOUSE_ALL);
+}
+
+// ===========================================================================
 // Layers
 // ===========================================================================
 void setLayer(uint8_t n) {
-  if (n >= NUM_LAYERS || n == currentLayer) return;
+  if (n >= layers.size() || n == currentLayer) return;
   resetWheels();
   if (latchedMouse) { Mouse.release(latchedMouse); latchedMouse = 0; }
   currentLayer = n;
   layerSavePending = true;
   layerChangedAt = millis();
   dirty = true;
-  Serial.printf("Layer %u: %s\n", n + 1, LAYERS[n].name);
+  sendLayerEvent();
 }
 
-void loadLayer() {
+void loadSavedLayer() {
   EEPROM.begin(256);
-  if (EEPROM.read(0) == 0xA5 && EEPROM.read(1) < NUM_LAYERS) currentLayer = EEPROM.read(1);
+  if (EEPROM.read(0) == 0xA5) currentLayer = EEPROM.read(1);
 }
 
 void saveLayerIfNeeded() {
@@ -187,6 +239,18 @@ void saveLayerIfNeeded() {
 // ===========================================================================
 // Wheels -> actions
 // ===========================================================================
+// Acceleration multiplier (1..w.accel) for a speed in rev/s, using the wheel's
+// overrides or the global settings.
+float accelFactor(const Wheel &w, float speed) {
+  float start = w.accelStart >= 0 ? w.accelStart : settings.accelStart;
+  float full = w.accelFull >= 0 ? w.accelFull : settings.accelFull;
+  float curve = w.accelCurve > 0 ? w.accelCurve : settings.accelCurve;
+  if (full <= start) full = start + 0.1f;
+  float f = constrain((speed - start) / (full - start), 0.0f, 1.0f);
+  if (curve != 1.0f) f = powf(f, curve);
+  return 1.0f + f * (w.accel - 1.0f);
+}
+
 void processWheel(uint8_t idx, int32_t delta) {
   Encoder &e = encs[idx];
   uint32_t now = millis();
@@ -195,37 +259,34 @@ void processWheel(uint8_t idx, int32_t delta) {
   if (e.activityAcc > 40) { e.activityAcc = 0; lastActivity = now; }
 
   if (fnActive) {  // layer select mode: left wheel scrolls layers
-    if (idx != 0) return;
+    if (idx != 0 || layers.empty()) return;
     layerAcc += delta;
-    const int32_t cps = 4096 / LAYER_STEPS_PER_REV;
-    while (layerAcc >= cps) { layerAcc -= cps; setLayer((currentLayer + 1) % NUM_LAYERS); fnUsed = true; }
-    while (layerAcc <= -cps) { layerAcc += cps; setLayer((currentLayer + NUM_LAYERS - 1) % NUM_LAYERS); fnUsed = true; }
+    const int32_t cps = 4096 / settings.layerSteps;
+    uint8_t n = layers.size();
+    while (layerAcc >= cps) { layerAcc -= cps; setLayer((currentLayer + 1) % n); fnUsed = true; }
+    while (layerAcc <= -cps) { layerAcc += cps; setLayer((currentLayer + n - 1) % n); fnUsed = true; }
     return;
   }
 
-  const Wheel &w = idx == 0 ? LAYERS[currentLayer].left : LAYERS[currentLayer].right;
+  const Wheel &w = idx == 0 ? layers[currentLayer].left : layers[currentLayer].right;
   switch (w.mode) {
     case W_STEP: {
-      if (w.perRev <= 0) return;
-      const int32_t cps = 4096 / w.perRev;
+      const int32_t cps = max(1, 4096 / w.perRev);
       e.acc += delta;
+      float fastSpeed = w.fastSpeed >= 0 ? w.fastSpeed : settings.fastSpeed;
       while (e.acc >= cps || e.acc <= -cps) {
         bool cw = e.acc > 0;
         e.acc += cw ? -cps : cps;
-        if (w.holdMods && !e.holding) {
+        if (w.holdMods && !e.holding && !hidMuted()) {
           modsDown(w.holdMods);
           e.holding = true;
           e.heldMods = w.holdMods;
         }
-        // Speed-dependent output
-        bool hasFast = w.fastCw.type != A_NONE;
-        if (hasFast && e.speed >= FAST_RPS) {
+        if (w.fastCw.type != A_NONE && e.speed >= fastSpeed) {
           tap(cw ? w.fastCw : w.fastCcw);
           e.boost = 255;
         } else {
-          float f = (e.speed - ACCEL_START_RPS) / (ACCEL_FULL_RPS - ACCEL_START_RPS);
-          f = constrain(f, 0.0f, 1.0f);
-          uint8_t repeat = 1 + (uint8_t)(f * (w.accelMax - 1) + 0.5f);
+          uint8_t repeat = (uint8_t)(accelFactor(w, e.speed) + 0.5f);
           for (uint8_t r = 0; r < repeat; r++) tap(cw ? w.cw : w.ccw);
           e.boost = repeat > 1 ? repeat : 0;
         }
@@ -236,13 +297,17 @@ void processWheel(uint8_t idx, int32_t delta) {
     }
     case W_MOUSE_X:
     case W_MOUSE_Y: {
-      e.mouseAcc += delta * (float)w.perRev / 4096.0f;
+      float mult = accelFactor(w, e.speed);
+      e.mouseAcc += delta * (float)w.perRev / 4096.0f * mult;
       int px = (int)e.mouseAcc;
       if (px) {
         e.mouseAcc -= px;
         px = constrain(px, -127, 127);
-        if (w.mode == W_MOUSE_X) Mouse.move(px, 0, 0);
-        else Mouse.move(0, px, 0);
+        if (!hidMuted()) {
+          if (w.mode == W_MOUSE_X) Mouse.move(px, 0, 0);
+          else Mouse.move(0, px, 0);
+        }
+        e.boost = mult >= 1.5f ? (uint8_t)(mult + 0.5f) : 0;
         e.flashUntil = now + 150;
       }
       break;
@@ -254,12 +319,8 @@ void processWheel(uint8_t idx, int32_t delta) {
 // ===========================================================================
 // Buttons
 // ===========================================================================
-bool btnState[BTN_COUNT] = {}, btnRaw[BTN_COUNT] = {};
-uint32_t btnChangedAt[BTN_COUNT] = {};
-bool btnFired[BTN_COUNT] = {};
-Action btnHeld[BTN_COUNT];  // action captured at press time (layer may change while held)
-
 void onPress(uint8_t i) {
+  sendButtonEvent(i, true);
   if (i == FN_BTN) {
     fnActive = true;
     fnUsed = false;
@@ -267,21 +328,23 @@ void onPress(uint8_t i) {
     resetWheels();
     return;
   }
-  if (fnActive) {  // Fn + button 2..8 -> jump to layer
+  if (fnActive) {
     fnUsed = true;
-    if (i != BOOT_BTN && i >= 1 && i - 1 < NUM_LAYERS) setLayer(i - 1);
+    if (i == DRIVE_BTN) setDrive(!driveActive());
+    else if (i != BOOT_BTN && i >= 1 && i - 1 < (int)layers.size()) setLayer(i - 1);
     return;
   }
-  btnHeld[i] = LAYERS[currentLayer].buttons[i].action;
+  btnHeld[i] = layers[currentLayer].buttons[i].action;
   btnFired[i] = true;
   actionDown(btnHeld[i]);
 }
 
 void onRelease(uint8_t i) {
+  sendButtonEvent(i, false);
   if (i == FN_BTN) {
     fnActive = false;
     layerAcc = 0;
-    if (!fnUsed && millis() - fnPressedAt < FN_TAP_MAX_MS) tap(LAYERS[currentLayer].buttons[FN_BTN].action);
+    if (!fnUsed && millis() - fnPressedAt < FN_TAP_MAX_MS) tap(layers[currentLayer].buttons[FN_BTN].action);
     return;
   }
   if (btnFired[i]) {
@@ -312,6 +375,14 @@ Adafruit_SSD1306 display(128, 64, &Wire, -1, I2C_HZ, I2C_HZ);
 bool displayOk = false;
 enum { SCREEN_ON, SCREEN_DIM, SCREEN_OFF } screenState = SCREEN_ON;
 bool drawnFlash[2] = {};
+bool drawnToast = false;
+
+void setContrast(uint8_t c) {
+  display.ssd1306_command(SSD1306_SETCONTRAST);
+  display.ssd1306_command(c);
+}
+
+uint8_t fullContrast() { return (uint8_t)map(settings.brightness, 1, 100, 1, 255); }
 
 void printCentered(const char *s, int cx, int y) {
   int w = strlen(s) * 6 - 1;
@@ -330,7 +401,7 @@ void drawCell(uint8_t i, const char *label, bool lit) {
 }
 
 void drawWheelLabel(const char *label, uint8_t boost, bool right, bool lit) {
-  // Show acceleration next to the label, on the side facing the screen centre
+  // Acceleration tag on the side facing the screen centre
   char tag[6] = "";
   if (boost == 255) strcpy(tag, ">>");
   else if (boost > 1) snprintf(tag, sizeof(tag), "x%u", boost);
@@ -349,27 +420,37 @@ void drawWheelLabel(const char *label, uint8_t boost, bool right, bool lit) {
   display.setTextColor(SSD1306_WHITE);
 }
 
+void drawHeader(const char *text) {
+  display.fillRect(0, 0, 128, 10, SSD1306_WHITE);
+  display.setTextColor(SSD1306_BLACK);
+  printCentered(text, 64, 1);
+  display.setTextColor(SSD1306_WHITE);
+}
+
 void drawScreen() {
-  const Layer &L = LAYERS[currentLayer];
+  const Layer &L = layers[currentLayer];
   uint32_t now = millis();
   display.clearDisplay();
   display.setTextSize(1);
 
-  // Header bar
-  char hdr[24];
-  if (fnActive) snprintf(hdr, sizeof(hdr), "LAYER: %s", L.name);
-  else snprintf(hdr, sizeof(hdr), "%u/%u %s", currentLayer + 1, NUM_LAYERS, L.name);
-  display.fillRect(0, 0, 128, 10, SSD1306_WHITE);
-  display.setTextColor(SSD1306_BLACK);
-  printCentered(hdr, 64, 1);
-  display.setTextColor(SSD1306_WHITE);
+  char hdr[28];
+  if (driveActive()) snprintf(hdr, sizeof(hdr), "USB DRIVE OPEN");
+  else if (fnActive) snprintf(hdr, sizeof(hdr), "LAYER: %s", L.name);
+  else if (hidMuted()) snprintf(hdr, sizeof(hdr), "CONFIG: %s", L.name);
+  else snprintf(hdr, sizeof(hdr), "%u/%u %s", currentLayer + 1, (unsigned)layers.size(), L.name);
+  drawHeader(hdr);
 
-  if (fnActive) {
+  if (driveActive() && !fnActive) {
+    printCentered("Edit layers.json,", 64, 16);
+    printCentered("then Fn + button 9", 64, 28);
+    printCentered("to apply.", 64, 40);
+  } else if (fnActive) {
     printCentered("<turn L / pick>", 64, 12);
     for (uint8_t i = 0; i < BTN_COUNT; i++) {
       if (i == FN_BTN) drawCell(i, "Fn", true);
       else if (i == BOOT_BTN) drawCell(i, "Boot", btnState[i]);
-      else if (i - 1 < NUM_LAYERS) drawCell(i, LAYERS[i - 1].shortName, i - 1 == currentLayer);
+      else if (i == DRIVE_BTN) drawCell(i, "Disk", driveActive());
+      else if (i - 1 < (int)layers.size()) drawCell(i, layers[i - 1].shortName, i - 1 == currentLayer);
       else drawCell(i, "", false);
     }
   } else {
@@ -386,23 +467,33 @@ void drawScreen() {
       drawCell(i, L.buttons[i].label, btnState[i] || latched);
     }
   }
+
+  // Toast message box over the middle of the screen
+  drawnToast = toastUntil > now;
+  if (drawnToast) {
+    int w = min(126, (int)toastMsg.length() * 6 + 8);
+    display.fillRect(64 - w / 2, 24, w, 16, SSD1306_BLACK);
+    display.drawRect(64 - w / 2, 24, w, 16, SSD1306_WHITE);
+    printCentered(toastMsg.c_str(), 64, 28);
+  }
   display.display();
 }
 
 void updateScreen() {
   if (!displayOk) return;
   uint32_t now = millis(), idle = now - lastActivity;
+  bool wantDim = settings.dimAfterS && idle >= settings.dimAfterS * 1000;
+  bool wantOff = settings.sleepAfterS && idle >= settings.sleepAfterS * 1000;
 
-  // Screensaver
-  if (idle < DIM_AFTER_MS) {
+  if (!wantDim && !wantOff) {
     if (screenState != SCREEN_ON) {
       if (screenState == SCREEN_OFF) display.ssd1306_command(SSD1306_DISPLAYON);
-      display.dim(false);
+      setContrast(fullContrast());
       screenState = SCREEN_ON;
       dirty = true;
     }
-  } else if (idle < SLEEP_AFTER_MS) {
-    if (screenState == SCREEN_ON) { display.dim(true); screenState = SCREEN_DIM; }
+  } else if (!wantOff) {
+    if (screenState == SCREEN_ON) { setContrast(1); screenState = SCREEN_DIM; }
   } else if (screenState != SCREEN_OFF) {
     display.ssd1306_command(SSD1306_DISPLAYOFF);
     screenState = SCREEN_OFF;
@@ -411,6 +502,7 @@ void updateScreen() {
 
   for (uint8_t w = 0; w < 2; w++)
     if ((encs[w].flashUntil > now) != drawnFlash[w] || encs[w].boost != encs[w].drawnBoost) dirty = true;
+  if ((toastUntil > now) != drawnToast) dirty = true;
 
   static uint32_t lastDraw = 0;
   if (dirty && now - lastDraw >= 40) {  // max 25 fps; each frame blocks I2C0 ~10 ms
@@ -420,16 +512,25 @@ void updateScreen() {
   }
 }
 
+// Called by host.cpp after (re)loading layers.json
+void onConfigLoaded() {
+  releaseAllOutputs();
+  resetWheels();
+  if (currentLayer >= layers.size()) currentLayer = 0;
+  if (displayOk && screenState == SCREEN_ON) setContrast(fullContrast());
+  dirty = true;
+  sendLayerEvent();
+}
+
 // ===========================================================================
 // Bootloader escape hatch
 // ===========================================================================
 void enterBootloader() {
-  Keyboard.releaseAll();
-  Mouse.release(MOUSE_ALL);
+  releaseAllOutputs();
   if (displayOk) {
     display.clearDisplay();
     display.ssd1306_command(SSD1306_DISPLAYON);
-    display.dim(false);
+    setContrast(255);
     display.setTextColor(SSD1306_WHITE);
     printCentered("USB bootloader", 64, 28);
     display.display();
@@ -470,44 +571,90 @@ void setup() {
   Wire1.begin();
   Wire1.setClock(I2C_HZ);
 
+#ifdef BOOT_DEBUG
+  while (!Serial && millis() < 20000) delay(10);
+  delay(500);
+#endif
+  // Hardware watchdog: if anything hangs (even with interrupts off), reboot.
+  // The safe-mode flag below then skips the step that hung.
+  rp2040.wdt_begin(8000);
+  BOOTLOG("boot: display\n");
   displayOk = display.begin(SSD1306_SWITCHCAPVCC, 0x3C, false, false);
-  for (auto &e : encs) { e.lastRetry = millis() - 1000; readDelta(e); }
+  for (uint8_t w = 0; w < 2; w++) { encs[w].lastRetry = millis() - 1000; readDelta(w); }
 
-  loadLayer();
+  BOOTLOG("boot: eeprom\n");
+  loadSavedLayer();
+  // Safe mode: if the previous boot never finished (crash/hang while loading the
+  // config), skip the flash filesystem this time and run on built-in defaults.
+  safeMode = EEPROM.read(2) == 0x5A;
+  EEPROM.write(2, 0x5A);
+  EEPROM.commit();
+  BOOTLOG("boot: safeMode=%d\n", safeMode);
+  if (!safeMode) {
+    BOOTLOG("boot: storageBegin\n");
+    storageBegin();
+  }
+  BOOTLOG("boot: reloadConfig\n");
+  reloadConfig();
+  BOOTLOG("boot: done\n");
+  if (safeMode) showToast("SAFE MODE", 5000);
+  bootedAt = millis();
   lastActivity = millis();
   dirty = true;
 }
 
 void loop() {
   uint32_t now = millis();
+  rp2040.wdt_reset();
 
+  hostPoll();
   updateButtons();
   checkBootCombo();
 
-  static uint32_t lastEnc = 0;
+  static uint32_t lastEnc = 0, lastWheelEvent = 0;
   if (now - lastEnc >= 2) {  // ~500 Hz wheel polling
     lastEnc = now;
     uint32_t nowUs = micros();
+    float tau = settings.smoothingMs / 1000.0f;
     for (uint8_t w = 0; w < 2; w++) {
       Encoder &e = encs[w];
       bool was = e.present;
-      int32_t d = readDelta(e);
-      // Smoothed speed (rev/s), ~50 ms time constant
+      int32_t d = readDelta(w);
+      // Smoothed speed in rev/s
       float dt = (nowUs - e.lastReadUs) * 1e-6f;
       e.lastReadUs = nowUs;
       if (dt > 0 && dt < 0.1f) {
         float inst = abs(d) / 4096.0f / dt;
-        float a = min(1.0f, dt / 0.05f);
-        e.speed += (inst - e.speed) * a;
+        e.speed += (inst - e.speed) * min(1.0f, dt / tau);
       }
       if (was != e.present) dirty = true;
       if (d) processWheel(w, d);
     }
   }
 
+  // Live wheel telemetry for the configurator's tuning graph (20 Hz while moving)
+  if (monitorMode && now - lastWheelEvent >= 50) {
+    lastWheelEvent = now;
+    static float lastSent[2] = {-1, -1};
+    for (uint8_t w = 0; w < 2; w++) {
+      Encoder &e = encs[w];
+      if (e.speed > 0.01f || lastSent[w] != 0) {
+        sendWheelEvent(w, e.speed, e.flashUntil > now ? e.boost : 0, e.last);
+        lastSent[w] = e.speed > 0.01f ? e.speed : 0;
+      }
+    }
+  }
+
   // Let go of held modifiers (e.g. Alt for Alt+Tab) once the wheel stops
   for (auto &e : encs)
-    if (e.holding && now - e.lastStepAt > HOLD_MODS_RELEASE_MS) releaseWheelHold(e);
+    if (e.holding && now - e.lastStepAt > settings.holdReleaseMs) releaseWheelHold(e);
+
+  // Boot is considered successful after 3 s of running: clear the safe-mode flag
+  if (bootedAt && now - bootedAt > 3000) {
+    bootedAt = 0;
+    EEPROM.write(2, 0);
+    EEPROM.commit();
+  }
 
   saveLayerIfNeeded();
   updateScreen();

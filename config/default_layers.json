@@ -1,0 +1,141 @@
+{
+  "version": 1,
+  "settings": {
+    "invert_left": false,
+    "invert_right": false,
+    "accel_start": 0.4,
+    "accel_full": 1.5,
+    "accel_curve": 1.0,
+    "fast_speed": 1.8,
+    "smoothing_ms": 50,
+    "hold_release_ms": 700,
+    "layer_steps": 10,
+    "brightness": 100,
+    "dim_after_s": 30,
+    "sleep_after_s": 300,
+    "auto_fallback": "General"
+  },
+  "layers": [
+    {
+      "name": "General", "short": "Gen", "apps": [],
+      "left":  { "label": "Scroll", "mode": "steps", "steps": 24, "ccw": "scroll_up", "cw": "scroll_down", "accel": 4 },
+      "right": { "label": "Volume", "mode": "steps", "steps": 24, "ccw": "vol_down", "cw": "vol_up", "accel": 2 },
+      "buttons": [
+        { "label": "Copy", "action": "ctrl+c" },
+        { "label": "Pste", "action": "ctrl+v" },
+        { "label": "Cut",  "action": "ctrl+x" },
+        { "label": "Undo", "action": "ctrl+z" },
+        { "label": "Redo", "action": "ctrl+shift+z" },
+        { "label": "Prev", "action": "prev_track" },
+        { "label": "Play", "action": "play_pause" },
+        { "label": "Next", "action": "next_track" },
+        { "label": "Mute", "action": "mute" },
+        { "label": "Lock", "action": "gui+l" }
+      ]
+    },
+    {
+      "name": "Kdenlive", "short": "Kden", "apps": ["kdenlive"],
+      "left":  { "label": "Jog", "mode": "steps", "steps": 48, "ccw": "left", "cw": "right", "accel": 4,
+                 "fast_ccw": "shift+left", "fast_cw": "shift+right" },
+      "right": { "label": "Zoom", "mode": "steps", "steps": 16, "ccw": "ctrl+scroll_down", "cw": "ctrl+scroll_up" },
+      "buttons": [
+        { "label": "Play", "action": "space" },
+        { "label": "J",    "action": "j" },
+        { "label": "K",    "action": "k" },
+        { "label": "L",    "action": "l" },
+        { "label": "Razr", "action": "shift+r" },
+        { "label": "In",   "action": "i" },
+        { "label": "Out",  "action": "o" },
+        { "label": "Sel",  "action": "kp_plus" },
+        { "label": "Del",  "action": "delete" },
+        { "label": "Undo", "action": "ctrl+z" }
+      ]
+    },
+    {
+      "name": "Resolve", "short": "Dvnc", "apps": ["resolve"],
+      "left":  { "label": "Jog", "mode": "steps", "steps": 48, "ccw": "left", "cw": "right", "accel": 4,
+                 "fast_ccw": "shift+left", "fast_cw": "shift+right" },
+      "right": { "label": "Zoom", "mode": "steps", "steps": 16, "ccw": "alt+scroll_down", "cw": "alt+scroll_up" },
+      "buttons": [
+        { "label": "Play", "action": "space" },
+        { "label": "J",    "action": "j" },
+        { "label": "K",    "action": "k" },
+        { "label": "L",    "action": "l" },
+        { "label": "Splt", "action": "ctrl+b" },
+        { "label": "In",   "action": "i" },
+        { "label": "Out",  "action": "o" },
+        { "label": "Sel",  "action": "shift+v" },
+        { "label": "Del",  "action": "delete" },
+        { "label": "Undo", "action": "ctrl+z" }
+      ]
+    },
+    {
+      "name": "Desktop", "short": "Desk", "apps": ["firefox", "navigator", "chrome", "chromium", "brave"],
+      "left":  { "label": "Windows", "mode": "steps", "steps": 10, "ccw": "shift+tab", "cw": "tab", "hold": "alt" },
+      "right": { "label": "Tabs", "mode": "steps", "steps": 12, "ccw": "ctrl+shift+tab", "cw": "ctrl+tab" },
+      "buttons": [
+        { "label": "Back", "action": "alt+left" },
+        { "label": "Fwd",  "action": "alt+right" },
+        { "label": "Rfsh", "action": "f5" },
+        { "label": "NewT", "action": "ctrl+t" },
+        { "label": "Clse", "action": "ctrl+w" },
+        { "label": "ReOp", "action": "ctrl+shift+t" },
+        { "label": "Find", "action": "ctrl+f" },
+        { "label": "Addr", "action": "ctrl+l" },
+        { "label": "Full", "action": "f11" },
+        { "label": "Shot", "action": "printscreen" }
+      ]
+    },
+    {
+      "name": "Gaming", "short": "Game", "apps": ["steam_app_"],
+      "left":  { "label": "Look", "mode": "mouse_x", "px": 2000, "accel": 2 },
+      "right": { "label": "Weapon", "mode": "steps", "steps": 12, "ccw": "scroll_up", "cw": "scroll_down" },
+      "buttons": [
+        { "label": "Esc", "action": "esc" },
+        { "label": "1",   "action": "1" },
+        { "label": "2",   "action": "2" },
+        { "label": "3",   "action": "3" },
+        { "label": "4",   "action": "4" },
+        { "label": "Tab", "action": "tab" },
+        { "label": "Q",   "action": "q" },
+        { "label": "E",   "action": "e" },
+        { "label": "R",   "action": "r" },
+        { "label": "F",   "action": "f" }
+      ]
+    },
+    {
+      "name": "Draw", "short": "Draw", "apps": [],
+      "left":  { "label": "< X >", "mode": "mouse_x", "px": 1000 },
+      "right": { "label": "^ Y v", "mode": "mouse_y", "px": -1000 },
+      "buttons": [
+        { "label": "Esc",  "action": "esc" },
+        { "label": "LClk", "action": "mouse_left" },
+        { "label": "MClk", "action": "mouse_middle" },
+        { "label": "RClk", "action": "mouse_right" },
+        { "label": "Undo", "action": "ctrl+z" },
+        { "label": "Draw", "action": "latch_left" },
+        { "label": "Ctrl", "action": "ctrl" },
+        { "label": "Shft", "action": "shift" },
+        { "label": "Alt",  "action": "alt" },
+        { "label": "Del",  "action": "delete" }
+      ]
+    },
+    {
+      "name": "Numbers", "short": "Num", "apps": [],
+      "left":  { "label": "Up/Down", "mode": "steps", "steps": 24, "ccw": "up", "cw": "down", "accel": 3 },
+      "right": { "label": "Lft/Rgt", "mode": "steps", "steps": 24, "ccw": "left", "cw": "right", "accel": 3 },
+      "buttons": [
+        { "label": "1", "action": "1" },
+        { "label": "2", "action": "2" },
+        { "label": "3", "action": "3" },
+        { "label": "4", "action": "4" },
+        { "label": "5", "action": "5" },
+        { "label": "6", "action": "6" },
+        { "label": "7", "action": "7" },
+        { "label": "8", "action": "8" },
+        { "label": "9", "action": "9" },
+        { "label": "0", "action": "0" }
+      ]
+    }
+  ]
+}

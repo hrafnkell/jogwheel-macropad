@@ -1,4 +1,5 @@
-// Hardware + behaviour tuning
+// Hardware + fixed behaviour. Everything else (key map, wheel tuning, screen
+// timeouts...) lives in layers.json - see config/REFERENCE.txt.
 #pragma once
 #include <Arduino.h>
 
@@ -11,24 +12,12 @@ constexpr uint32_t I2C_HZ = 1000000;             // drop to 400000 if the OLED/w
 constexpr uint8_t BTN_PINS[10] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
 
 // ---- Special buttons (index into BTN_PINS) --------------------------------
-constexpr uint8_t FN_BTN = 0;    // top-left: hold = layer select, tap = its normal action
-constexpr uint8_t BOOT_BTN = 9;  // bottom-right: Fn + this for 3 s = USB bootloader
-
-// ---- Wheels ---------------------------------------------------------------
-// Flip if a wheel turns the "wrong" way (clockwise should be + / up / next)
-constexpr bool INVERT_LEFT = false;
-constexpr bool INVERT_RIGHT = false;
-constexpr uint16_t LAYER_STEPS_PER_REV = 10;  // Fn + left wheel layer scrolling
-// Wheel acceleration, speeds in revolutions per second
-constexpr float ACCEL_START_RPS = 0.4f;  // below this: 1 action per step (precise)
-constexpr float ACCEL_FULL_RPS = 1.5f;   // at/above this: accelMax actions per step
-constexpr float FAST_RPS = 1.8f;         // above this: use the wheel's .fast() actions, if it has any
-constexpr uint32_t HOLD_MODS_RELEASE_MS = 700; // e.g. Alt in Alt+Tab is let go this long after you stop turning
+constexpr uint8_t FN_BTN = 0;     // top-left: hold = layer select, tap = its normal action
+constexpr uint8_t DRIVE_BTN = 8;  // Fn + this = open/close the USB config drive
+constexpr uint8_t BOOT_BTN = 9;   // Fn + this for 3 s = USB bootloader
 
 // ---- Timing ---------------------------------------------------------------
 constexpr uint32_t DEBOUNCE_MS = 5;
-constexpr uint32_t FN_TAP_MAX_MS = 600;       // hold Fn longer than this w/o doing anything = no tap action
+constexpr uint32_t FN_TAP_MAX_MS = 600;  // hold Fn longer than this w/o doing anything = no tap action
 constexpr uint32_t BOOTLOADER_HOLD_MS = 3000;
-constexpr uint32_t DIM_AFTER_MS = 30UL * 1000;       // OLED dims
-constexpr uint32_t SLEEP_AFTER_MS = 5UL * 60 * 1000; // OLED turns off (burn-in protection)
-constexpr uint32_t LAYER_SAVE_DELAY_MS = 3000;       // remember layer across power cycles
+constexpr uint32_t LAYER_SAVE_DELAY_MS = 3000;  // remember layer across power cycles

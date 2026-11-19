@@ -1,0 +1,118 @@
+JOGWHEEL MACROPAD - layers.json reference
+=========================================
+
+Edit layers.json on this drive and save it. Wait a second, then press Fn + button 9
+on the pad to close the drive. The pad reloads the file straight away.
+
+Don't use Eject / Safely Remove in your file manager. On Linux (and Windows) that
+powers off the whole USB device, including the keyboard, until you replug it.
+
+Problems are listed in errors.txt and shown on the OLED. If the file is broken, the
+built-in defaults are used and your file is left untouched so you can fix it.
+
+Delete layers.json to get the defaults back (a fresh copy is written on the next boot).
+// and /* */ comments are allowed in the file.
+
+The web configurator (web/index.html in the GitHub repo) edits the same file.
+
+
+FILE LAYOUT
+-----------
+{
+  "version": 1,
+  "settings": { ... },          global tuning, see SETTINGS
+  "layers": [ { ... }, ... ]    up to 16 layers, see LAYERS
+}
+
+
+LAYERS
+------
+{
+  "name":  "Kdenlive",          up to 10 characters (OLED header)
+  "short": "Kden",              up to 4 characters (layer picker grid)
+  "apps":  ["kdenlive"],        auto-switch: window class contains this text.
+                                "title:youtube" matches the window title instead.
+  "left":  { wheel },
+  "right": { wheel },
+  "buttons": [ 10 x { "label": "Copy", "action": "ctrl+c" } ]
+}                                top row left->right, then bottom row.
+                                label: up to 4 characters.
+
+
+WHEELS
+------
+  "label":    "Jog"             up to 8 characters
+  "mode":     "steps"           fire an action every 1/steps of a turn
+              "mouse_x"         move the mouse horizontally
+              "mouse_y"         move the mouse vertically
+              "none"
+  "steps":    48                (steps)   actions per full turn
+  "px":       1000              (mouse)   pixels per full turn, negative = reversed
+  "ccw":      "left"            (steps)   action when turning counter-clockwise
+  "cw":       "right"           (steps)   action when turning clockwise
+  "hold":     "alt"             (steps)   modifier(s) held while turning, released
+                                          shortly after you stop (Alt+Tab switcher)
+  "accel":    4                 turning fast repeats each step up to this many times
+                                (mouse: multiplies speed). 1 = no acceleration.
+  "fast_ccw": "shift+left"      (steps)   used instead of ccw/cw above fast_speed,
+  "fast_cw":  "shift+right"               e.g. jump 1 second instead of 1 frame
+
+  Per-wheel overrides of the global speed curve (optional):
+  "accel_start", "accel_full", "accel_curve", "fast_speed"
+
+
+SETTINGS
+--------
+  "invert_left" / "invert_right"   false   flip a wheel's direction
+  "accel_start"   0.4   rev/s - below this every step is 1 action (precise)
+  "accel_full"    1.5   rev/s - at this speed the full "accel" multiplier applies
+  "accel_curve"   1.0   1 = linear ramp between start and full, 2 = gentler start,
+                        0.5 = kicks in sooner
+  "fast_speed"    1.8   rev/s - above this, wheels with fast_ccw/fast_cw use those
+  "smoothing_ms"  50    speed measurement smoothing; higher = steadier, slower to react
+  "hold_release_ms" 700 how long "hold" modifiers stay down after you stop turning
+  "layer_steps"   10    layers per turn when using Fn + left wheel
+  "brightness"    100   OLED brightness 1-100
+  "dim_after_s"   30    OLED dims after this many idle seconds (0 = never)
+  "sleep_after_s" 300   OLED turns off after this many idle seconds (0 = never)
+  "auto_fallback" "General"  layer used by the auto-switch script when the focused
+                        app matches no layer. "" = stay on the current layer.
+
+
+ACTIONS
+-------
+Keys joined with "+", modifiers first:   "ctrl+shift+z"   "alt+tab"   "f5"
+A modifier on its own is held while the button is held:   "ctrl"
+"" or "none" does nothing.
+
+Modifiers   ctrl  shift  alt  gui (also: super, win, meta, cmd)
+
+Keys        a-z  0-9  f1-f24
+            space enter esc tab backspace delete insert
+            home end pageup pagedown up down left right
+            printscreen scrolllock pause capslock numlock menu
+            minus equal lbracket rbracket backslash semicolon quote
+            backtick comma period slash
+            kp_0..kp_9 kp_plus kp_minus kp_multiply kp_divide kp_enter kp_dot
+
+Media       vol_up vol_down mute play_pause next_track prev_track stop
+            bright_up bright_down calculator browser_back browser_forward
+            browser_refresh browser_home search
+
+Mouse       mouse_left mouse_right mouse_middle      held while button held
+            latch_left latch_right latch_middle      toggle on each press (drag lock)
+            scroll_up scroll_down                    one notch; "scroll_down:3" = 3
+            Modifiers work with mouse actions too:   "ctrl+scroll_up"
+
+Keys are sent as US keyboard POSITIONS. Letters, digits, arrows and F-keys are the
+same on most layouts, but symbols (minus, equal, brackets...) land on whatever your
+layout has in that spot. Keypad keys (kp_plus...) are the same on every layout.
+
+
+BUILT-IN BUTTON FUNCTIONS (not configurable)
+--------------------------------------------
+  Tap button 1                  its normal action (fires on release)
+  Hold button 1 + left wheel    cycle layers
+  Hold button 1 + button 2..8   jump to layer 1..7
+  Hold button 1 + button 9      open / close this USB drive
+  Hold button 1 + button 10 3s  USB bootloader (for flashing firmware)

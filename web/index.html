@@ -1,0 +1,958 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jogwheel Configurator</title>
+<style>
+:root {
+  --bg: #f4f5f7; --panel: #ffffff; --panel2: #eef0f3; --border: #d9dde3; --text: #1b1f24; --muted: #5d6673;
+  --accent: #2f6fde; --accent-text: #ffffff; --accent-soft: #e3ecfc; --danger: #c93636; --ok: #1f8a4c; --warn: #b7791f;
+  --key: #fdfdfe; --key-shadow: #c5cad2; --oled: #05070a; --oled-text: #cfe8ff; --pressed: #ffb020;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111418; --panel: #1a1e24; --panel2: #232831; --border: #313844; --text: #e6e9ee; --muted: #98a2b1;
+    --accent: #5b93f5; --accent-text: #0b1220; --accent-soft: #1f2d48; --danger: #ef6b6b; --ok: #4cc386; --warn: #e2a84a;
+    --key: #2a303a; --key-shadow: #0b0d10; --oled: #000000; --oled-text: #bfe1ff; --pressed: #ffb020;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111418; --panel: #1a1e24; --panel2: #232831; --border: #313844; --text: #e6e9ee; --muted: #98a2b1;
+  --accent: #5b93f5; --accent-text: #0b1220; --accent-soft: #1f2d48; --danger: #ef6b6b; --ok: #4cc386; --warn: #e2a84a;
+  --key: #2a303a; --key-shadow: #0b0d10; --oled: #000000; --oled-text: #bfe1ff; --pressed: #ffb020;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; border: 1px solid var(--border); background: var(--panel); border-radius: 8px; padding: 6px 12px; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .45; cursor: default; }
+button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+button.small { padding: 2px 8px; font-size: 12px; border-radius: 6px; }
+button.danger:hover:not(:disabled) { border-color: var(--danger); color: var(--danger); }
+input[type=text], input[type=number], select, textarea {
+  background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; width: 100%;
+}
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+input.bad { border-color: var(--danger); }
+
+header { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--border); flex-wrap: wrap; position: sticky; top: 0; z-index: 5; }
+header h1 { font-size: 16px; margin: 0 8px 0 0; white-space: nowrap; }
+.status { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+.dot.on { background: var(--ok); }
+.spacer { flex: 1; }
+.group { display: flex; gap: 6px; flex-wrap: wrap; }
+
+main { display: grid; grid-template-columns: 230px minmax(0, 1fr) 360px; gap: 14px; padding: 14px 16px; max-width: 1500px; margin: 0 auto; }
+@media (max-width: 1100px) { main { grid-template-columns: 200px minmax(0, 1fr); } #inspector { grid-column: 1 / -1; } }
+@media (max-width: 720px) { main { grid-template-columns: 1fr; padding: 12px 16px; } }
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 12px; min-width: 0; }
+.panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 10px; }
+
+#layerList { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+#layerList li { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; }
+#layerList li:hover { background: var(--panel2); }
+#layerList li.sel { background: var(--accent-soft); border-color: var(--accent); }
+#layerList .num { font: 600 12px var(--mono); color: var(--muted); width: 18px; }
+#layerList .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#layerList .live { font-size: 11px; color: var(--ok); }
+.layer-tools { display: flex; gap: 4px; flex-wrap: wrap; }
+
+.tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
+.tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; padding: 6px 12px; color: var(--muted); }
+.tabs button.on { color: var(--text); border-bottom-color: var(--accent); }
+
+/* Pad */
+.pad { background: var(--panel2); border: 1px solid var(--border); border-radius: 18px; padding: 18px; max-width: 560px; margin: 0 auto; }
+.pad-top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 14px; margin-bottom: 18px; }
+.knob { justify-self: center; width: 92px; height: 92px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, var(--key), var(--panel2)); border: 1px solid var(--border); box-shadow: 0 3px 0 var(--key-shadow); position: relative; cursor: pointer; }
+.knob.sel { outline: 3px solid var(--accent); outline-offset: 3px; }
+.knob .ptr { position: absolute; left: 50%; top: 8px; width: 4px; height: 26px; margin-left: -2px; border-radius: 2px; background: var(--accent); transform-origin: 2px 38px; }
+.knob .klabel { position: absolute; bottom: -24px; left: 50%; transform: translateX(-50%); font-size: 12px; color: var(--muted); white-space: nowrap; }
+.knob.moving { box-shadow: 0 3px 0 var(--key-shadow), 0 0 0 4px color-mix(in srgb, var(--pressed) 45%, transparent); }
+.oled { width: 192px; height: 96px; background: var(--oled); border-radius: 6px; border: 4px solid #2b2f36; font: 10px/12px var(--mono); color: var(--oled-text); padding: 2px 4px; overflow: hidden; cursor: pointer; }
+.oled .hdr { background: var(--oled-text); color: var(--oled); text-align: center; margin: 0 -4px 2px; white-space: nowrap; overflow: hidden; }
+.oled .wl { display: flex; justify-content: space-between; white-space: nowrap; }
+.oled .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; margin-top: 4px; }
+.oled .grid span { border: 1px solid var(--oled-text); border-radius: 2px; text-align: center; height: 26px; line-height: 24px; overflow: hidden; font-size: 9px; }
+.oled .grid span.on { background: var(--oled-text); color: var(--oled); }
+.keys { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+.key { aspect-ratio: 1; border-radius: 10px; background: var(--key); border: 1px solid var(--border); box-shadow: 0 4px 0 var(--key-shadow); display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; padding: 4px; min-width: 0; transition: transform .05s; }
+.key .lbl { font-weight: 650; font-size: 15px; }
+.key .act { font: 10px var(--mono); color: var(--muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.key.sel { outline: 3px solid var(--accent); outline-offset: 2px; }
+.key.down { transform: translateY(3px); box-shadow: 0 1px 0 var(--key-shadow); background: color-mix(in srgb, var(--pressed) 35%, var(--key)); }
+.key.err .act { color: var(--danger); }
+.key .gp { font: 9px var(--mono); color: var(--muted); opacity: .7; }
+.hint { color: var(--muted); font-size: 12px; }
+.pad-hint { text-align: center; margin-top: 14px; }
+
+/* Inspector */
+.field { margin-bottom: 12px; }
+.field > label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+.row { display: flex; gap: 8px; align-items: center; }
+.row > * { min-width: 0; }
+.err-msg { color: var(--danger); font-size: 12px; margin-top: 3px; }
+.ok-msg { color: var(--ok); font-size: 12px; margin-top: 3px; }
+.checks { display: flex; gap: 12px; flex-wrap: wrap; }
+.checks label { display: inline-flex; align-items: center; gap: 4px; font-weight: 400; color: var(--text); font-size: 13px; }
+details { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 12px; }
+details summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+details[open] summary { margin-bottom: 10px; }
+.rec { white-space: nowrap; }
+.rec.on { background: var(--danger); color: #fff; border-color: var(--danger); }
+.pick { width: auto; max-width: 110px; }
+canvas.graph { width: 100%; height: 170px; display: block; background: var(--panel2); border-radius: 8px; border: 1px solid var(--border); }
+.graph-legend { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-top: 4px; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.speed-live { font: 600 13px var(--mono); }
+
+#jsonText { font: 12px/1.5 var(--mono); min-height: 520px; resize: vertical; }
+#errorsBox { margin-top: 10px; }
+#errorsBox li { color: var(--danger); font-size: 12px; }
+
+#toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 9px 16px; border-radius: 8px; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity .2s; max-width: calc(100% - 32px); z-index: 20; }
+#toast.show { opacity: 1; }
+#toast.bad { background: var(--danger); color: #fff; }
+.banner { background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 8px; padding: 8px 12px; margin: 12px 16px 0; font-size: 13px; }
+.banner.bad { background: color-mix(in srgb, var(--danger) 12%, var(--panel)); border-color: var(--danger); }
+kbd { font: 11px var(--mono); background: var(--panel2); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎛️ Jogwheel Configurator</h1>
+  <span class="status"><span class="dot" id="connDot"></span><span id="connText">Not connected</span></span>
+  <button id="btnConnect" class="primary">Connect pad</button>
+  <label class="status" title="Pressing a pad button selects it here instead of typing">
+    <input type="checkbox" id="learn"> Pad selects keys (mute output)
+  </label>
+  <span class="spacer"></span>
+  <div class="group">
+    <button id="btnLoad" disabled title="Reload layers.json from the pad (discards unsaved edits)">Reload from pad</button>
+    <button id="btnSave" class="primary" disabled>Save to pad</button>
+    <button id="btnOpen" title="Open a layers.json file">Open file…</button>
+    <button id="btnDownload" title="Download layers.json (copy it onto the pad's USB drive)">Download</button>
+    <button id="btnDefaults" title="Load the built-in default layers into the editor">Defaults</button>
+  </div>
+  <input type="file" id="fileInput" accept=".json,application/json" hidden>
+</header>
+<div id="banner" class="banner" hidden></div>
+
+<main>
+  <section class="panel" id="layersPanel">
+    <h2>Layers</h2>
+    <ul id="layerList"></ul>
+    <div class="layer-tools">
+      <button class="small" id="lyAdd">+ New</button>
+      <button class="small" id="lyDup">Duplicate</button>
+      <button class="small" id="lyUp" title="Move up">↑</button>
+      <button class="small" id="lyDown" title="Move down">↓</button>
+      <button class="small danger" id="lyDel">Delete</button>
+    </div>
+    <p class="hint" style="margin-top:12px">On the pad: hold <b>top-left</b> + turn the left wheel, or + button 2–8 to jump to layers 1–7.</p>
+  </section>
+
+  <section class="panel" id="center">
+    <div class="tabs">
+      <button data-tab="pad" class="on">Layout</button>
+      <button data-tab="tuning">Wheel tuning</button>
+      <button data-tab="json">JSON</button>
+    </div>
+
+    <div data-pane="pad">
+      <div class="pad">
+        <div class="pad-top">
+          <div class="knob" data-target="wheel" data-index="0"><div class="ptr"></div><div class="klabel"></div></div>
+          <div class="oled" id="oled" data-target="layer"></div>
+          <div class="knob" data-target="wheel" data-index="1"><div class="ptr"></div><div class="klabel"></div></div>
+        </div>
+        <div style="height:14px"></div>
+        <div class="keys" id="keys"></div>
+      </div>
+      <p class="hint pad-hint">Click a key, a wheel or the screen to edit it. Top-left also works as <b>Fn</b>: tapping it fires its action, holding it switches layers.</p>
+    </div>
+
+    <div data-pane="tuning" hidden>
+      <p class="hint" style="margin-top:0">These settings apply to every wheel unless a wheel overrides them. Connect the pad and turn a wheel: the dot shows its live speed on the curve.</p>
+      <div class="two">
+        <div class="field"><label>Left wheel now</label><div class="speed-live" id="liveL">–</div></div>
+        <div class="field"><label>Right wheel now</label><div class="speed-live" id="liveR">–</div></div>
+      </div>
+      <canvas class="graph" id="graphGlobal" width="700" height="190"></canvas>
+      <div class="graph-legend"><span>wheel speed (turns / second) →</span><span id="graphGlobalNote"></span></div>
+      <div id="settingsForm" style="margin-top:14px"></div>
+    </div>
+
+    <div data-pane="json" hidden>
+      <p class="hint" style="margin-top:0">This is exactly what gets saved as <kbd>layers.json</kbd>. Edit it directly and press Apply. See <kbd>REFERENCE.txt</kbd> on the pad's drive for all key names.</p>
+      <textarea id="jsonText" spellcheck="false"></textarea>
+      <div class="row" style="margin-top:8px"><button id="jsonApply" class="primary">Apply</button><button id="jsonReset">Revert</button><span id="jsonMsg" class="hint"></span></div>
+    </div>
+    <ul id="errorsBox"></ul>
+  </section>
+
+  <section class="panel" id="inspector"></section>
+</main>
+<div id="toast"></div>
+
+<script>
+'use strict';
+// ===========================================================================
+// Action syntax - mirrors src/keymap.cpp
+// ===========================================================================
+const MODS = { ctrl: 'ctrl', control: 'ctrl', shift: 'shift', alt: 'alt', option: 'alt', gui: 'gui', super: 'gui', win: 'gui', meta: 'gui', cmd: 'gui' };
+const MOD_ORDER = ['ctrl', 'shift', 'alt', 'gui'];
+const KEYS = new Set(('space enter return esc escape tab backspace delete del insert ins home end pageup pgup pagedown pgdn ' +
+  'up down left right printscreen prtsc scrolllock pause capslock numlock menu minus equal lbracket rbracket backslash ' +
+  'semicolon quote backtick comma period slash kp_0 kp_1 kp_2 kp_3 kp_4 kp_5 kp_6 kp_7 kp_8 kp_9 kp_plus kp_minus ' +
+  'kp_multiply kp_divide kp_enter kp_dot').split(' '));
+const MEDIA = ['vol_up', 'vol_down', 'mute', 'play_pause', 'next_track', 'prev_track', 'stop', 'bright_up', 'bright_down',
+  'calculator', 'browser_back', 'browser_forward', 'browser_refresh', 'browser_home', 'search'];
+const MOUSE = ['mouse_left', 'mouse_right', 'mouse_middle'];
+const LATCH = ['latch_left', 'latch_right', 'latch_middle'];
+
+// Returns null if valid, otherwise an error string.
+function actionError(s) {
+  s = (s || '').trim().toLowerCase();
+  if (!s || s === 'none') return null;
+  const parts = s.split('+').map(p => p.trim());
+  if (parts.some(p => !p)) return 'empty key name (use kp_plus for "+")';
+  const last = parts.pop();
+  for (const p of parts) if (!(p in MODS)) return `"${p}" is not a modifier`;
+  const hasMods = parts.length > 0;
+  if (last in MODS) return null;
+  if (last.length === 1 && last > ' ' && last < '\x7f') return null;
+  if (/^f([1-9]|1[0-9]|2[0-4])$/.test(last)) return null;
+  if (KEYS.has(last)) return null;
+  if (MEDIA.includes(last)) return hasMods ? 'media keys can\'t have modifiers' : null;
+  if (MOUSE.includes(last) || LATCH.includes(last)) return null;
+  const m = last.match(/^scroll_(up|down)(?::(\d+))?$/);
+  if (m) return (m[2] && (+m[2] < 1 || +m[2] > 127)) ? 'scroll amount must be 1-127' : null;
+  return `unknown key "${last}"`;
+}
+function isModsOnly(s) {
+  s = (s || '').trim().toLowerCase();
+  return !!s && s.split('+').every(p => p.trim() in MODS);
+}
+
+// Browser key event -> action token (positional, like the pad sends)
+const CODE_MAP = {
+  Space: 'space', Enter: 'enter', Escape: 'esc', Tab: 'tab', Backspace: 'backspace', Delete: 'delete', Insert: 'insert',
+  Home: 'home', End: 'end', PageUp: 'pageup', PageDown: 'pagedown', ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left',
+  ArrowRight: 'right', PrintScreen: 'printscreen', ScrollLock: 'scrolllock', Pause: 'pause', CapsLock: 'capslock',
+  NumLock: 'numlock', ContextMenu: 'menu', Minus: 'minus', Equal: 'equal', BracketLeft: 'lbracket', BracketRight: 'rbracket',
+  Backslash: 'backslash', IntlBackslash: 'backslash', Semicolon: 'semicolon', Quote: 'quote', Backquote: 'backtick', Comma: 'comma',
+  Period: 'period', Slash: 'slash', NumpadAdd: 'kp_plus', NumpadSubtract: 'kp_minus', NumpadMultiply: 'kp_multiply',
+  NumpadDivide: 'kp_divide', NumpadEnter: 'kp_enter', NumpadDecimal: 'kp_dot', AudioVolumeUp: 'vol_up',
+  AudioVolumeDown: 'vol_down', AudioVolumeMute: 'mute', MediaPlayPause: 'play_pause', MediaTrackNext: 'next_track',
+  MediaTrackPrevious: 'prev_track', MediaStop: 'stop',
+};
+const MOD_CODES = { ControlLeft: 'ctrl', ControlRight: 'ctrl', ShiftLeft: 'shift', ShiftRight: 'shift', AltLeft: 'alt',
+  AltRight: 'alt', MetaLeft: 'gui', MetaRight: 'gui', OSLeft: 'gui', OSRight: 'gui' };
+function codeToToken(code) {
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
+  if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+  if (/^Numpad[0-9]$/.test(code)) return 'kp_' + code.slice(6);
+  if (/^F([1-9]|1[0-9]|2[0-4])$/.test(code)) return code.toLowerCase();
+  return CODE_MAP[code] || null;
+}
+function modsFromEvent(e, extra) {
+  const set = new Set(extra || []);
+  if (e.ctrlKey) set.add('ctrl'); if (e.shiftKey) set.add('shift'); if (e.altKey) set.add('alt'); if (e.metaKey) set.add('gui');
+  return MOD_ORDER.filter(m => set.has(m));
+}
+
+const QUICK_PICKS = {
+  'Media': MEDIA,
+  'Mouse': [...MOUSE, ...LATCH, 'scroll_up', 'scroll_down', 'ctrl+scroll_up', 'ctrl+scroll_down', 'alt+scroll_up', 'alt+scroll_down', 'shift+scroll_up', 'shift+scroll_down'],
+  'Navigation': ['left', 'right', 'up', 'down', 'shift+left', 'shift+right', 'alt+left', 'alt+right', 'home', 'end', 'pageup', 'pagedown'],
+  'Editing': ['ctrl+c', 'ctrl+v', 'ctrl+x', 'ctrl+z', 'ctrl+shift+z', 'ctrl+y', 'ctrl+s', 'ctrl+a', 'delete', 'backspace', 'enter', 'esc', 'tab', 'space'],
+  'Modifier only': ['ctrl', 'shift', 'alt', 'gui'],
+  'Nothing': ['none'],
+};
+
+// ===========================================================================
+// State
+// ===========================================================================
+const BTN_GPIO = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+const DEFAULT_SETTINGS = { invert_left: false, invert_right: false, accel_start: 0.4, accel_full: 1.5, accel_curve: 1.0, fast_speed: 1.8,
+  smoothing_ms: 50, hold_release_ms: 700, layer_steps: 10, brightness: 100, dim_after_s: 30, sleep_after_s: 300, auto_fallback: 'General' };
+let cfg = null;              // the config object being edited
+let savedText = '';          // last text loaded/saved, for dirty tracking
+let sel = { layer: 0, target: 'layer', index: 0 };
+let tab = 'pad';
+const live = { btn: new Set(), wheel: [{ speed: 0, boost: 0, raw: 0, t: 0 }, { speed: 0, boost: 0, raw: 0, t: 0 }], layer: -1 };
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function toast(msg, bad) {
+  const t = $('#toast'); t.textContent = msg; t.className = 'show' + (bad ? ' bad' : '');
+  clearTimeout(toast.tm); toast.tm = setTimeout(() => t.className = '', bad ? 6000 : 2600);
+}
+function banner(html, bad) { const b = $('#banner'); b.hidden = !html; b.innerHTML = html || ''; b.className = 'banner' + (bad ? ' bad' : ''); }
+
+// JSON with // and /* */ comments (allowed by the firmware)
+function stripComments(t) {
+  let out = '', i = 0, inStr = false;
+  while (i < t.length) {
+    const c = t[i], n = t[i + 1];
+    if (inStr) { out += c; if (c === '\\') { out += n ?? ''; i += 2; continue; } if (c === '"') inStr = false; i++; continue; }
+    if (c === '"') { inStr = true; out += c; i++; continue; }
+    if (c === '/' && n === '/') { while (i < t.length && t[i] !== '\n') i++; continue; }
+    if (c === '/' && n === '*') { i += 2; while (i < t.length && !(t[i] === '*' && t[i + 1] === '/')) i++; i += 2; continue; }
+    out += c; i++;
+  }
+  return out;
+}
+// Pretty JSON that keeps small objects (buttons, wheels) on one line
+function pretty(obj) {
+  const json = JSON.stringify(obj, null, 2);
+  return json.replace(/\{\n[^{}\[\]]*?\n\s*\}/g, m => {
+    const one = m.replace(/\n\s*/g, ' ').replace('{ ', '{ ');
+    return one.length <= 120 ? one : m;
+  }).replace(/\[\n\s*([^\[\]{}\n]*?)\n\s*\]/g, (m, inner) => inner.length < 80 ? `[${inner.trim()}]` : m)
+    .replace(/\[\n(\s*)("[^"\n]*",?\n\s*)+\]/g, m => {
+      const one = '[' + m.slice(1, -1).split('\n').map(s => s.trim()).filter(Boolean).join(' ') + ']';
+      return one.length < 100 ? one : m;
+    });
+}
+
+function normalize(c) {
+  c.version = c.version || 1;
+  c.settings = Object.assign({}, DEFAULT_SETTINGS, c.settings || {});
+  c.layers = (c.layers || []).map(l => {
+    l.apps = l.apps || [];
+    l.buttons = l.buttons || [];
+    while (l.buttons.length < 10) l.buttons.push({ label: '', action: '' });
+    l.left = l.left || { label: '', mode: 'none' };
+    l.right = l.right || { label: '', mode: 'none' };
+    return l;
+  });
+  return c;
+}
+function setConfigFromText(text, source) {
+  let obj;
+  try { obj = JSON.parse(stripComments(text)); }
+  catch (e) { toast(`Could not parse ${source}: ${e.message}`, true); return false; }
+  if (!Array.isArray(obj.layers) || !obj.layers.length) { toast(`${source}: no layers found`, true); return false; }
+  cfg = normalize(obj);
+  savedText = pretty(cfg);
+  if (sel.layer >= cfg.layers.length) sel.layer = 0;
+  renderAll();
+  return true;
+}
+const currentText = () => pretty(cfg);
+const isDirty = () => cfg && currentText() !== savedText;
+function changed() { renderAll(); }
+
+// ===========================================================================
+// Validation
+// ===========================================================================
+function collectErrors() {
+  const errs = [];
+  if (!cfg) return errs;
+  cfg.layers.forEach((l, li) => {
+    const where = `Layer ${li + 1} (${l.name || '?'})`;
+    l.buttons.slice(0, 10).forEach((b, i) => { const e = actionError(b.action); if (e) errs.push(`${where} button ${i + 1}: ${e}`); });
+    for (const side of ['left', 'right']) {
+      const w = l[side];
+      if (w.mode === 'steps') for (const k of ['ccw', 'cw', 'fast_ccw', 'fast_cw', 'hold']) {
+        const e = actionError(w[k]); if (e) errs.push(`${where} ${side} wheel ${k}: ${e}`);
+      }
+      if (w.mode === 'steps' && w.hold && !actionError(w.hold) && !isModsOnly(w.hold)) errs.push(`${where} ${side} wheel hold: modifiers only`);
+    }
+  });
+  const fb = cfg.settings.auto_fallback;
+  if (fb && !cfg.layers.some(l => (l.name || '').toLowerCase() === fb.toLowerCase())) errs.push(`Settings: auto_fallback "${fb}" is not a layer name`);
+  if (cfg.layers.length > 16) errs.push('More than 16 layers - the pad only loads the first 16');
+  return errs;
+}
+
+// ===========================================================================
+// Acceleration model - mirrors accelFactor() in src/main.cpp
+// ===========================================================================
+function curveParams(w) {
+  const s = cfg.settings, has = k => w && typeof w[k] === 'number' && w[k] >= 0;
+  return {
+    start: has('accel_start') ? w.accel_start : s.accel_start,
+    full: has('accel_full') ? w.accel_full : s.accel_full,
+    curve: has('accel_curve') && w.accel_curve > 0 ? w.accel_curve : s.accel_curve,
+    fast: has('fast_speed') ? w.fast_speed : s.fast_speed,
+  };
+}
+function accelAt(w, p, speed) {
+  let full = p.full <= p.start ? p.start + 0.1 : p.full;
+  let f = Math.min(1, Math.max(0, (speed - p.start) / (full - p.start)));
+  if (p.curve !== 1) f = Math.pow(f, p.curve);
+  return 1 + f * ((w && w.accel ? w.accel : 1) - 1);
+}
+function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+
+// Draws multiplier vs speed for one or more wheels, with live speed markers
+function drawGraph(canvas, series) {
+  const dpr = window.devicePixelRatio || 1, W = canvas.clientWidth, H = canvas.clientHeight;
+  if (!W) return;
+  canvas.width = W * dpr; canvas.height = H * dpr;
+  const g = canvas.getContext('2d'); g.scale(dpr, dpr);
+  const pad = { l: 34, r: 10, t: 12, b: 22 };
+  const maxSpeed = Math.max(3, ...series.map(s => Math.max(s.p.full, s.hasFast ? s.p.fast : 0) * 1.35));
+  const maxMult = Math.max(2, ...series.map(s => s.w?.accel || 1)) ;
+  const X = v => pad.l + (v / maxSpeed) * (W - pad.l - pad.r);
+  const Y = m => H - pad.b - ((m - 1) / (maxMult - 1)) * (H - pad.t - pad.b);
+  const muted = cssVar('--muted'), border = cssVar('--border');
+  g.font = '11px system-ui'; g.fillStyle = muted; g.strokeStyle = border; g.lineWidth = 1;
+  for (let m = 1; m <= maxMult; m++) {
+    g.beginPath(); g.moveTo(pad.l, Y(m)); g.lineTo(W - pad.r, Y(m)); g.stroke();
+    g.fillText('x' + m, 6, Y(m) + 4);
+  }
+  for (let v = 0; v <= maxSpeed; v += 0.5) { g.fillText(v.toFixed(1), X(v) - 8, H - 6); }
+  series.forEach(s => {
+    if (s.hasFast) {  // shade the "fast jump" zone
+      g.fillStyle = s.color + '22';
+      g.fillRect(X(s.p.fast), pad.t, W - pad.r - X(s.p.fast), H - pad.t - pad.b);
+      g.fillStyle = s.color; g.fillText('fast ⏩', Math.min(X(s.p.fast) + 4, W - 50), pad.t + 12);
+    }
+    g.strokeStyle = s.color; g.lineWidth = 2.5; g.beginPath();
+    for (let i = 0; i <= 200; i++) {
+      const v = maxSpeed * i / 200, y = Y(accelAt(s.w, s.p, v));
+      i ? g.lineTo(X(v), y) : g.moveTo(X(v), y);
+    }
+    g.stroke();
+    if (s.live != null && s.live > 0.01) {
+      const v = Math.min(s.live, maxSpeed);
+      g.fillStyle = s.color; g.beginPath(); g.arc(X(v), Y(accelAt(s.w, s.p, v)), 6, 0, Math.PI * 2); g.fill();
+    }
+  });
+}
+
+// ===========================================================================
+// Rendering
+// ===========================================================================
+function renderAll() {
+  if (!cfg) return;
+  renderLayers(); renderPad(); renderInspector(); renderSettings(); renderJson(); renderErrors(); renderHeader();
+}
+function renderHeader() {
+  const c = !!port;
+  $('#btnSave').disabled = !c;
+  $('#btnLoad').disabled = !c;
+  $('#btnSave').textContent = isDirty() ? 'Save to pad •' : 'Save to pad';
+  document.title = (isDirty() ? '• ' : '') + 'Jogwheel Configurator';
+}
+function renderLayers() {
+  $('#layerList').innerHTML = cfg.layers.map((l, i) => `
+    <li data-layer="${i}" class="${i === sel.layer ? 'sel' : ''}">
+      <span class="num">${i + 1}</span><span class="nm">${esc(l.name)}</span>
+      ${i === live.layer ? '<span class="live" title="The pad is on this layer">● pad</span>' : ''}
+    </li>`).join('');
+}
+function actionShort(a) { return (a || '').trim() || '—'; }
+function wheelSummary(w) {
+  if (!w || w.mode === 'none' || !w.mode) return 'off';
+  if (w.mode === 'steps') return `${w.ccw || '—'} / ${w.cw || '—'}`;
+  return `${w.mode === 'mouse_x' ? 'mouse X' : 'mouse Y'} ${w.px}px`;
+}
+function renderPad() {
+  const L = cfg.layers[sel.layer];
+  const onLive = live.layer === sel.layer;
+  $('#keys').innerHTML = L.buttons.slice(0, 10).map((b, i) => {
+    const bad = actionError(b.action);
+    const cls = ['key', sel.target === 'btn' && sel.index === i ? 'sel' : '', onLive && live.btn.has(i) ? 'down' : '', bad ? 'err' : ''].join(' ');
+    return `<div class="${cls}" data-target="btn" data-index="${i}" title="GP${BTN_GPIO[i]}${i === 0 ? ' · also Fn' : ''}">
+      <span class="lbl">${esc(b.label) || '&nbsp;'}</span><span class="act">${esc(actionShort(b.action))}</span>
+      <span class="gp">${i === 0 ? 'Fn' : i + 1}</span></div>`;
+  }).join('');
+  document.querySelectorAll('.knob').forEach(k => {
+    const i = +k.dataset.index, w = i ? L.right : L.left, lw = live.wheel[i];
+    k.classList.toggle('sel', sel.target === 'wheel' && sel.index === i);
+    k.classList.toggle('moving', lw.speed > 0.05);
+    k.querySelector('.ptr').style.transform = `rotate(${(lw.raw / 4096) * 360}deg)`;
+    k.querySelector('.klabel').textContent = w.label || wheelSummary(w);
+  });
+  const tag = i => { const b = live.wheel[i].boost; return !onLive ? '' : b === 255 ? '>>' : b > 1 ? 'x' + b : ''; };
+  $('#oled').innerHTML = `<div class="hdr">${sel.layer + 1}/${cfg.layers.length} ${esc(L.name)}</div>
+    <div class="wl"><span>${esc(L.left.label)} ${tag(0)}</span><span>${tag(1)} ${esc(L.right.label)}</span></div>
+    <div class="grid">${L.buttons.slice(0, 10).map((b, i) => `<span class="${onLive && live.btn.has(i) ? 'on' : ''}">${esc(b.label)}</span>`).join('')}</div>`;
+  $('#oled').style.outline = sel.target === 'layer' ? '3px solid var(--accent)' : '';
+}
+
+// ---- Inspector ------------------------------------------------------------
+function actionField(id, label, value, hint) {
+  const err = actionError(value);
+  const opts = Object.entries(QUICK_PICKS).map(([g, list]) =>
+    `<optgroup label="${g}">${list.map(a => `<option value="${a}">${a}</option>`).join('')}</optgroup>`).join('');
+  return `<div class="field"><label for="${id}">${label}</label>
+    <div class="row"><input type="text" id="${id}" data-action value="${esc(value || '')}" placeholder="e.g. ctrl+shift+z" class="${err ? 'bad' : ''}" autocomplete="off" spellcheck="false">
+    <button class="rec" data-rec="${id}" title="Press a key combination">⏺ Rec</button>
+    <select class="pick" data-pick="${id}"><option value="">Pick…</option>${opts}</select></div>
+    ${err ? `<div class="err-msg">${esc(err)}</div>` : hint ? `<div class="hint">${hint}</div>` : ''}</div>`;
+}
+function num(id, label, value, attrs = '', hint = '') {
+  return `<div class="field"><label for="${id}">${label}</label><input type="number" id="${id}" value="${value ?? ''}" ${attrs}>${hint ? `<div class="hint">${hint}</div>` : ''}</div>`;
+}
+function text(id, label, value, max, hint = '') {
+  return `<div class="field"><label for="${id}">${label}</label><input type="text" id="${id}" value="${esc(value || '')}" ${max ? `maxlength="${max}"` : ''}>${hint ? `<div class="hint">${hint}</div>` : ''}</div>`;
+}
+
+function renderInspector() {
+  const L = cfg.layers[sel.layer], el = $('#inspector');
+  if (sel.target === 'btn') {
+    const b = L.buttons[sel.index];
+    el.innerHTML = `<h2>Button ${sel.index + 1} · ${esc(L.name)}</h2>
+      ${text('bLabel', 'Label (shown on the OLED, max 4)', b.label, 4)}
+      ${actionField('bAction', 'Action', b.action, 'Held while the button is held. Modifiers first: <kbd>ctrl+shift+z</kbd>')}
+      ${sel.index === 0 ? '<p class="hint">This is also the <b>Fn</b> key: its action fires when you tap and release it.</p>' : ''}
+      ${sel.index === 8 ? '<p class="hint">Fn + this button opens the pad\'s USB drive.</p>' : ''}
+      ${sel.index === 9 ? '<p class="hint">Fn + this button held for 3 s reboots into the USB bootloader.</p>' : ''}`;
+  } else if (sel.target === 'wheel') {
+    renderWheelInspector(el, L, sel.index ? 'right' : 'left');
+  } else {
+    el.innerHTML = `<h2>Layer ${sel.layer + 1}</h2>
+      ${text('lName', 'Name (max 10)', L.name, 10)}
+      ${text('lShort', 'Short name (max 4, layer picker grid)', L.short, 4)}
+      ${text('lApps', 'Auto-switch apps', (L.apps || []).join(', '), 0,
+        'Comma separated. Matches the window class (e.g. <kbd>kdenlive</kbd>, <kbd>resolve</kbd>, <kbd>firefox</kbd>). Use <kbd>title:youtube</kbd> to match the window title. Needs <kbd>tools/jogwheel-autoswitch.py</kbd> running. Run it with <kbd>--verbose</kbd> to see window classes.')}
+      <p class="hint">Click a key or a wheel on the pad to edit it.</p>`;
+  }
+  wireInspector();
+}
+
+function renderWheelInspector(el, L, side) {
+  const w = L[side], p = curveParams(w), mode = w.mode || 'none';
+  const custom = ['accel_start', 'accel_full', 'accel_curve', 'fast_speed'].some(k => typeof w[k] === 'number');
+  const holdMods = (w.hold || '').toLowerCase().split('+').map(s => MODS[s.trim()]).filter(Boolean);
+  const live1 = live.wheel[side === 'left' ? 0 : 1];
+  el.innerHTML = `<h2>${side === 'left' ? 'Left' : 'Right'} wheel · ${esc(L.name)}</h2>
+    ${text('wLabel', 'Label (max 8)', w.label, 8)}
+    <div class="field"><label for="wMode">Mode</label><select id="wMode">
+      <option value="steps" ${mode === 'steps' ? 'selected' : ''}>Steps: send an action every 1/N of a turn</option>
+      <option value="mouse_x" ${mode === 'mouse_x' ? 'selected' : ''}>Mouse X</option>
+      <option value="mouse_y" ${mode === 'mouse_y' ? 'selected' : ''}>Mouse Y</option>
+      <option value="none" ${mode === 'none' ? 'selected' : ''}>Off</option></select></div>
+    ${mode === 'steps' ? `
+      ${num('wSteps', 'Steps per turn', w.steps ?? 24, 'min="1" max="512"', 'Higher = finer. 48 ≈ one step every 7.5°.')}
+      ${actionField('wCcw', '↺ Counter-clockwise', w.ccw)}
+      ${actionField('wCw', '↻ Clockwise', w.cw)}
+      <div class="field"><label>Hold while turning</label><div class="checks">
+        ${MOD_ORDER.map(m => `<label><input type="checkbox" data-hold="${m}" ${holdMods.includes(m) ? 'checked' : ''}> ${m}</label>`).join('')}
+      </div><div class="hint">Held down while you turn and let go shortly after you stop, e.g. Alt for an Alt+Tab switcher.</div></div>` : ''}
+    ${mode === 'mouse_x' || mode === 'mouse_y' ? num('wPx', 'Pixels per turn', w.px ?? 1000, 'step="50"', 'Negative = reversed direction.') : ''}
+    ${mode !== 'none' ? `
+      <details open><summary>Acceleration</summary>
+        <div class="field"><label for="wAccel">Max multiplier: <b id="wAccelV">x${w.accel || 1}</b></label>
+          <input type="range" id="wAccel" min="1" max="10" step="${mode === 'steps' ? 1 : 0.5}" value="${w.accel || 1}" style="width:100%">
+          <div class="hint">${mode === 'steps' ? 'Turning fast repeats each step up to this many times.' : 'Turning fast multiplies mouse speed.'} x1 = off.</div></div>
+        ${mode === 'steps' ? `
+          ${actionField('wFastCcw', '⏪ Fast counter-clockwise (optional)', w.fast_ccw, 'Replaces ↺ when spinning faster than the fast speed, e.g. <kbd>shift+left</kbd> to jump a second.')}
+          ${actionField('wFastCw', '⏩ Fast clockwise (optional)', w.fast_cw)}` : ''}
+        <canvas class="graph" id="graphWheel" width="400" height="170"></canvas>
+        <div class="graph-legend"><span>turns / second →</span><span class="speed-live" id="wLive">${live1.speed.toFixed(2)} t/s</span></div>
+        <label class="checks" style="margin:10px 0"><label><input type="checkbox" id="wCustom" ${custom ? 'checked' : ''}> Custom speed curve for this wheel</label></label>
+        ${custom ? `<div class="two">
+          ${num('wStart', 'Starts at (t/s)', p.start, 'step="0.05" min="0"')}
+          ${num('wFull', 'Full at (t/s)', p.full, 'step="0.05" min="0"')}
+          ${num('wCurve', 'Curve', p.curve, 'step="0.1" min="0.1" max="5"', '1 linear, 2 gentle')}
+          ${mode === 'steps' ? num('wFast', 'Fast at (t/s)', p.fast, 'step="0.05" min="0"') : ''}
+        </div>` : `<p class="hint">Uses the global curve from the <b>Wheel tuning</b> tab.</p>`}
+      </details>` : ''}`;
+  requestAnimationFrame(drawWheelGraph);
+}
+function drawWheelGraph() {
+  const c = $('#graphWheel'); if (!c || sel.target !== 'wheel') return;
+  const L = cfg.layers[sel.layer], w = sel.index ? L.right : L.left;
+  const onLive = live.layer === sel.layer;
+  drawGraph(c, [{ w, p: curveParams(w), hasFast: w.mode === 'steps' && !!(w.fast_cw || w.fast_ccw), color: cssVar('--accent'),
+    live: onLive ? live.wheel[sel.index].speed : null }]);
+  const lbl = $('#wLive'); if (lbl) lbl.textContent = live.wheel[sel.index].speed.toFixed(2) + ' t/s';
+}
+
+function wireInspector() {
+  const L = cfg.layers[sel.layer];
+  const on = (id, ev, fn) => { const e = document.getElementById(id); if (e) e.addEventListener(ev, fn); };
+  if (sel.target === 'btn') {
+    const b = L.buttons[sel.index];
+    on('bLabel', 'input', e => { b.label = e.target.value; renderPad(); renderJson(); renderHeader(); });
+    on('bAction', 'change', e => { b.action = e.target.value.trim(); changed(); });
+  } else if (sel.target === 'wheel') {
+    const side = sel.index ? 'right' : 'left', w = L[side];
+    on('wLabel', 'input', e => { w.label = e.target.value; renderPad(); renderJson(); renderHeader(); });
+    on('wMode', 'change', e => {
+      w.mode = e.target.value;
+      if (w.mode === 'steps' && !w.steps) w.steps = 24;
+      if (w.mode.startsWith('mouse') && !w.px) w.px = 1000;
+      changed();
+    });
+    on('wSteps', 'change', e => { w.steps = Math.max(1, Math.min(512, parseInt(e.target.value) || 24)); changed(); });
+    on('wPx', 'change', e => { w.px = parseInt(e.target.value) || 1000; changed(); });
+    on('wCcw', 'change', e => { w.ccw = e.target.value.trim(); changed(); });
+    on('wCw', 'change', e => { w.cw = e.target.value.trim(); changed(); });
+    on('wFastCcw', 'change', e => { setOpt(w, 'fast_ccw', e.target.value.trim()); changed(); });
+    on('wFastCw', 'change', e => { setOpt(w, 'fast_cw', e.target.value.trim()); changed(); });
+    on('wAccel', 'input', e => { const v = parseFloat(e.target.value); if (v > 1) w.accel = v; else delete w.accel; $('#wAccelV').textContent = 'x' + v; drawWheelGraph(); renderJson(); renderHeader(); });
+    on('wCustom', 'change', e => {
+      const p = curveParams(null);
+      if (e.target.checked) Object.assign(w, { accel_start: p.start, accel_full: p.full, accel_curve: p.curve }, w.mode === 'steps' ? { fast_speed: p.fast } : {});
+      else ['accel_start', 'accel_full', 'accel_curve', 'fast_speed'].forEach(k => delete w[k]);
+      changed();
+    });
+    for (const [id, key] of [['wStart', 'accel_start'], ['wFull', 'accel_full'], ['wCurve', 'accel_curve'], ['wFast', 'fast_speed']])
+      on(id, 'input', e => { const v = parseFloat(e.target.value); if (!isNaN(v)) { w[key] = v; drawWheelGraph(); renderJson(); renderHeader(); } });
+    document.querySelectorAll('[data-hold]').forEach(cb => cb.addEventListener('change', () => {
+      const mods = [...document.querySelectorAll('[data-hold]:checked')].map(c => c.dataset.hold);
+      setOpt(w, 'hold', mods.join('+')); changed();
+    }));
+  } else {
+    on('lName', 'input', e => {
+      const old = L.name; L.name = e.target.value;
+      if (cfg.settings.auto_fallback && cfg.settings.auto_fallback === old) cfg.settings.auto_fallback = L.name;
+      renderLayers(); renderPad(); renderJson(); renderHeader();
+    });
+    on('lShort', 'input', e => { L.short = e.target.value; renderJson(); renderHeader(); });
+    on('lApps', 'change', e => { L.apps = e.target.value.split(',').map(s => s.trim().toLowerCase()).filter(Boolean); changed(); });
+  }
+  // Quick picks + recording for every action input in the inspector
+  document.querySelectorAll('#inspector [data-pick]').forEach(s => s.addEventListener('change', () => {
+    if (!s.value) return;
+    const input = document.getElementById(s.dataset.pick);
+    input.value = s.value === 'none' ? '' : s.value;
+    input.dispatchEvent(new Event('change'));
+  }));
+  document.querySelectorAll('#inspector [data-rec]').forEach(b => b.addEventListener('click', () => startRecording(b)));
+  document.querySelectorAll('#inspector [data-action]').forEach(i => i.addEventListener('input', () => {
+    i.classList.toggle('bad', !!actionError(i.value));
+  }));
+}
+function setOpt(obj, key, val) { if (val) obj[key] = val; else delete obj[key]; }
+
+// ---- Key recording ----------------------------------------------------------
+let recording = null;
+function startRecording(btn) {
+  if (recording) { stopRecording(); if (recording?.btn === btn) return; }
+  recording = { btn, input: document.getElementById(btn.dataset.rec), mods: new Set(), maxMods: [] };
+  btn.classList.add('on'); btn.textContent = 'Press keys…';
+  window.addEventListener('keydown', recKeyDown, true);
+  window.addEventListener('keyup', recKeyUp, true);
+}
+function stopRecording() {
+  if (!recording) return;
+  recording.btn.classList.remove('on'); recording.btn.textContent = '⏺ Rec';
+  window.removeEventListener('keydown', recKeyDown, true);
+  window.removeEventListener('keyup', recKeyUp, true);
+  const r = recording; recording = null; return r;
+}
+function recKeyDown(e) {
+  e.preventDefault(); e.stopPropagation();
+  if (MOD_CODES[e.code]) {
+    recording.mods.add(MOD_CODES[e.code]);
+    if (recording.mods.size > recording.maxMods.length) recording.maxMods = MOD_ORDER.filter(m => recording.mods.has(m));
+    recording.input.value = recording.maxMods.join('+') + '+…';
+    return;
+  }
+  const tok = codeToToken(e.code);
+  if (!tok) { toast(`Can't record "${e.code}". Type it or use Pick…`, true); return; }
+  const mods = MEDIA.includes(tok) ? [] : modsFromEvent(e, recording.mods);
+  finishRecording([...mods, tok].join('+'));
+}
+function recKeyUp(e) {
+  e.preventDefault(); e.stopPropagation();
+  if (MOD_CODES[e.code]) {
+    recording.mods.delete(MOD_CODES[e.code]);
+    if (recording.mods.size === 0 && recording.maxMods.length) finishRecording(recording.maxMods.join('+'));  // modifier(s) only
+  }
+}
+function finishRecording(value) {
+  const r = stopRecording();
+  r.input.value = value;
+  r.input.dispatchEvent(new Event('change'));
+}
+
+// ---- Settings (Wheel tuning tab) -------------------------------------------
+function renderSettings() {
+  const s = cfg.settings;
+  const sw = (id, label, val, hint) => `<div class="field"><label class="checks"><label><input type="checkbox" id="${id}" ${val ? 'checked' : ''}> ${label}</label></label>${hint ? `<div class="hint">${hint}</div>` : ''}</div>`;
+  $('#settingsForm').innerHTML = `
+    <div class="two">
+      ${num('sStart', 'Acceleration starts at (turns/s)', s.accel_start, 'step="0.05" min="0"', 'Slower than this = 1 action per step, fully precise.')}
+      ${num('sFull', 'Full acceleration at (turns/s)', s.accel_full, 'step="0.05" min="0"', 'From here the wheel\'s max multiplier applies.')}
+      ${num('sCurve', 'Curve shape', s.accel_curve, 'step="0.1" min="0.1" max="5"', '1 = linear, 2 = gentle start, 0.5 = kicks in early.')}
+      ${num('sFast', 'Fast jump at (turns/s)', s.fast_speed, 'step="0.05" min="0"', 'Wheels with fast actions switch to them above this.')}
+      ${num('sSmooth', 'Speed smoothing (ms)', s.smoothing_ms, 'min="1" max="1000"', 'Higher = steadier speed, slower to react.')}
+      ${num('sHold', 'Release held modifiers after (ms)', s.hold_release_ms, 'min="50" max="10000"', 'For "hold while turning" wheels like Alt+Tab.')}
+    </div>
+    <div class="two">
+      ${sw('sInvL', 'Invert left wheel', s.invert_left)}
+      ${sw('sInvR', 'Invert right wheel', s.invert_right)}
+    </div>
+    <h2 style="margin-top:8px">Other</h2>
+    <div class="two">
+      ${num('sLayerSteps', 'Layers per turn (Fn + left wheel)', s.layer_steps, 'min="2" max="64"')}
+      ${num('sBright', 'OLED brightness (1-100)', s.brightness, 'min="1" max="100"')}
+      ${num('sDim', 'Dim screen after (s, 0 = never)', s.dim_after_s, 'min="0"')}
+      ${num('sSleep', 'Screen off after (s, 0 = never)', s.sleep_after_s, 'min="0"')}
+    </div>
+    <div class="field"><label for="sFallback">When the focused app matches no layer (auto-switch)</label>
+      <select id="sFallback"><option value="">Stay on the current layer</option>
+      ${cfg.layers.map(l => `<option value="${esc(l.name)}" ${l.name === s.auto_fallback ? 'selected' : ''}>Switch to ${esc(l.name)}</option>`).join('')}</select></div>`;
+  const bind = (id, key, parse) => document.getElementById(id).addEventListener('input', e => {
+    const v = parse(e.target); if (v === null) return; s[key] = v; drawGlobalGraph(); renderJson(); renderHeader();
+  });
+  const f = el => { const v = parseFloat(el.value); return isNaN(v) ? null : v; };
+  const n = el => { const v = parseInt(el.value); return isNaN(v) ? null : v; };
+  bind('sStart', 'accel_start', f); bind('sFull', 'accel_full', f); bind('sCurve', 'accel_curve', f); bind('sFast', 'fast_speed', f);
+  bind('sSmooth', 'smoothing_ms', n); bind('sHold', 'hold_release_ms', n); bind('sLayerSteps', 'layer_steps', n);
+  bind('sBright', 'brightness', n); bind('sDim', 'dim_after_s', n); bind('sSleep', 'sleep_after_s', n);
+  bind('sInvL', 'invert_left', el => el.checked); bind('sInvR', 'invert_right', el => el.checked);
+  bind('sFallback', 'auto_fallback', el => el.value);
+  requestAnimationFrame(drawGlobalGraph);
+}
+function drawGlobalGraph() {
+  if (tab !== 'tuning') return;
+  const L = cfg.layers[sel.layer], onLive = live.layer === sel.layer;
+  const mk = (w, i, color) => ({ w, p: curveParams(w), hasFast: w.mode === 'steps' && !!(w.fast_cw || w.fast_ccw), color, live: onLive ? live.wheel[i].speed : null });
+  drawGraph($('#graphGlobal'), [mk(L.left, 0, cssVar('--accent')), mk(L.right, 1, cssVar('--ok'))]);
+  $('#graphGlobalNote').innerHTML = `<span style="color:var(--accent)">■</span> left: ${esc(L.left.label || L.left.mode)} (x${L.left.accel || 1}) &nbsp; <span style="color:var(--ok)">■</span> right: ${esc(L.right.label || L.right.mode)} (x${L.right.accel || 1}) · layer ${esc(L.name)}`;
+  const fmt = i => { const lw = live.wheel[i]; return `${lw.speed.toFixed(2)} turns/s ${lw.boost === 255 ? '⏩ fast' : lw.boost > 1 ? '· x' + lw.boost : ''}`; };
+  $('#liveL').textContent = port ? fmt(0) : '–'; $('#liveR').textContent = port ? fmt(1) : '–';
+}
+
+function renderJson() {
+  if (document.activeElement !== $('#jsonText')) $('#jsonText').value = currentText();
+}
+function renderErrors() {
+  const errs = collectErrors();
+  $('#errorsBox').innerHTML = errs.map(e => `<li>${esc(e)}</li>`).join('');
+}
+
+// ===========================================================================
+// UI events
+// ===========================================================================
+document.querySelector('.tabs').addEventListener('click', e => {
+  const t = e.target.dataset.tab; if (!t) return;
+  tab = t;
+  document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  document.querySelectorAll('[data-pane]').forEach(p => p.hidden = p.dataset.pane !== t);
+  if (t === 'tuning') drawGlobalGraph();
+  if (t === 'json') $('#jsonText').value = currentText();
+});
+$('#layerList').addEventListener('click', e => {
+  const li = e.target.closest('li'); if (!li) return;
+  sel = { layer: +li.dataset.layer, target: 'layer', index: 0 };
+  renderAll();
+});
+$('#center').addEventListener('click', e => {
+  const t = e.target.closest('[data-target]'); if (!t) return;
+  sel = { layer: sel.layer, target: t.dataset.target, index: +(t.dataset.index || 0) };
+  renderPad(); renderInspector();
+});
+function blankLayer(n) {
+  return { name: `Layer ${n}`, short: `L${n}`, apps: [], left: { label: '', mode: 'none' }, right: { label: '', mode: 'none' },
+    buttons: Array.from({ length: 10 }, () => ({ label: '', action: '' })) };
+}
+$('#lyAdd').onclick = () => { cfg.layers.push(blankLayer(cfg.layers.length + 1)); sel = { layer: cfg.layers.length - 1, target: 'layer', index: 0 }; changed(); };
+$('#lyDup').onclick = () => {
+  const c = JSON.parse(JSON.stringify(cfg.layers[sel.layer])); c.name = (c.name + ' 2').slice(0, 10); c.apps = [];
+  cfg.layers.splice(sel.layer + 1, 0, c); sel.layer++; changed();
+};
+$('#lyDel').onclick = () => {
+  if (cfg.layers.length <= 1) return toast('The pad needs at least one layer', true);
+  if (!confirm(`Delete layer "${cfg.layers[sel.layer].name}"?`)) return;
+  cfg.layers.splice(sel.layer, 1); sel = { layer: Math.max(0, sel.layer - 1), target: 'layer', index: 0 }; changed();
+};
+function moveLayer(d) {
+  const j = sel.layer + d; if (j < 0 || j >= cfg.layers.length) return;
+  [cfg.layers[sel.layer], cfg.layers[j]] = [cfg.layers[j], cfg.layers[sel.layer]]; sel.layer = j; changed();
+}
+$('#lyUp').onclick = () => moveLayer(-1);
+$('#lyDown').onclick = () => moveLayer(1);
+
+$('#jsonApply').onclick = () => {
+  const keep = sel; if (setConfigFromText($('#jsonText').value, 'JSON')) {
+    savedText = savedText === currentText() ? savedText : savedText; sel = keep; if (sel.layer >= cfg.layers.length) sel.layer = 0;
+    $('#jsonMsg').textContent = 'Applied - press Save to pad to store it.'; renderAll();
+  }
+};
+$('#jsonReset').onclick = () => { $('#jsonText').value = currentText(); $('#jsonMsg').textContent = ''; };
+
+$('#btnDownload').onclick = () => {
+  const blob = new Blob([currentText() + '\n'], { type: 'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'layers.json'; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+$('#btnOpen').onclick = () => $('#fileInput').click();
+$('#fileInput').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  const before = savedText;
+  if (setConfigFromText(await f.text(), f.name)) { savedText = before; renderHeader(); toast(`Opened ${f.name}. Save to pad to apply it.`); }
+  e.target.value = '';
+};
+$('#btnDefaults').onclick = async () => {
+  if (isDirty() && !confirm('Replace your unsaved edits with the built-in defaults?')) return;
+  const before = savedText;
+  let text = null;
+  if (port) { try { text = (await request('GETDEFAULT', 'default')).text; } catch (e) { } }
+  if (!text) { try { text = await (await fetch('../config/default_layers.json')).text(); } catch (e) { } }
+  if (!text) return toast('Connect the pad to load its defaults', true);
+  if (setConfigFromText(text, 'defaults')) { savedText = before; renderHeader(); toast('Defaults loaded into the editor. Save to pad to apply them.'); }
+};
+window.addEventListener('beforeunload', e => { if (isDirty()) { e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('resize', () => { drawGlobalGraph(); drawWheelGraph(); });
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { drawGlobalGraph(); drawWheelGraph(); });
+
+// ===========================================================================
+// WebSerial
+// ===========================================================================
+let port = null, writer = null, reader = null;
+const waiters = [];
+const enc = new TextEncoder();
+
+async function send(line) { if (writer) await writer.write(enc.encode(line + '\n')); }
+function request(cmd, type, timeout = 6000, payload = null) {
+  return new Promise(async (resolve, reject) => {
+    const w = { type, resolve, reject, timer: setTimeout(() => { waiters.splice(waiters.indexOf(w), 1); reject(new Error('The pad did not answer')); }, timeout) };
+    waiters.push(w);
+    try {
+      await send(cmd);
+      if (payload) for (let i = 0; i < payload.length; i += 512) await writer.write(payload.subarray(i, i + 512));
+    } catch (e) { clearTimeout(w.timer); waiters.splice(waiters.indexOf(w), 1); reject(e); }
+  });
+}
+function onMessage(m) {
+  const wi = waiters.findIndex(w => w.type === m.type || m.type === 'error');
+  if (wi >= 0) {
+    const w = waiters.splice(wi, 1)[0]; clearTimeout(w.timer);
+    m.type === 'error' && w.type !== 'error' ? w.reject(new Error(m.msg)) : w.resolve(m);
+    if (m.type === 'error') return;
+  }
+  switch (m.type) {
+    case 'layer':
+      live.layer = m.index;
+      if ($('#learn').checked && cfg && m.index < cfg.layers.length && sel.layer !== m.index) { sel = { layer: m.index, target: 'layer', index: 0 }; renderAll(); }
+      else if (cfg) { renderLayers(); renderPad(); }
+      break;
+    case 'btn':
+      if (m.down) live.btn.add(m.i); else live.btn.delete(m.i);
+      if (m.down && $('#learn').checked && cfg && live.layer === sel.layer && m.i !== 0) { sel = { layer: sel.layer, target: 'btn', index: m.i }; renderInspector(); }
+      if (cfg) renderPad();
+      break;
+    case 'wheel': {
+      const lw = live.wheel[m.w]; Object.assign(lw, { speed: +m.speed, boost: m.boost, raw: m.raw });
+      if (m.speed > 0.2 && $('#learn').checked && cfg && live.layer === sel.layer && !(sel.target === 'wheel' && sel.index === m.w)) {
+        sel = { layer: sel.layer, target: 'wheel', index: m.w }; renderInspector();
+      }
+      scheduleLiveDraw();
+      break;
+    }
+  }
+}
+let liveRaf = 0;
+function scheduleLiveDraw() {
+  if (liveRaf) return;
+  liveRaf = requestAnimationFrame(() => { liveRaf = 0; if (!cfg) return; renderPad(); drawWheelGraph(); drawGlobalGraph(); });
+}
+async function readLoop() {
+  const dec = new TextDecoder(); let buf = '';
+  try {
+    while (port && port.readable) {
+      reader = port.readable.getReader();
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let nl;
+          while ((nl = buf.indexOf('\n')) >= 0) {
+            const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
+            if (line.startsWith('{')) { try { onMessage(JSON.parse(line)); } catch (e) { console.warn('bad line', line); } }
+            else if (line) console.log('[pad]', line);
+          }
+        }
+      } finally { reader.releaseLock(); reader = null; }
+    }
+  } catch (e) { console.warn(e); }
+  disconnected();
+}
+function disconnected() {
+  if (!port) return;
+  port = null; writer = null; live.layer = -1; live.btn.clear();
+  waiters.splice(0).forEach(w => { clearTimeout(w.timer); w.reject(new Error('Disconnected')); });
+  $('#connDot').className = 'dot'; $('#connText').textContent = 'Disconnected';
+  $('#btnConnect').textContent = 'Connect pad';
+  if (cfg) renderAll();
+}
+async function connect() {
+  if (port) {  // disconnect
+    try { await send('MONITOR 0'); } catch (e) { }
+    const p = port; try { await reader?.cancel(); } catch (e) { } try { writer?.releaseLock(); } catch (e) { }
+    try { await p.close(); } catch (e) { }
+    disconnected(); return;
+  }
+  try {
+    const p = await navigator.serial.requestPort({ filters: [{ usbVendorId: 0x2e8a }] });
+    await p.open({ baudRate: 115200 });
+    port = p; writer = p.writable.getWriter();
+    readLoop();
+    const hello = await request('HELLO', 'hello');
+    $('#connDot').className = 'dot on';
+    $('#connText').textContent = `Connected · firmware ${hello.fw}${hello.drive ? ' · USB drive open' : ''}`;
+    $('#btnConnect').textContent = 'Disconnect';
+    live.layer = hello.layer;
+    await send($('#learn').checked ? 'MONITOR 2' : 'MONITOR 1');
+    if (hello.drive) banner('The pad\'s USB drive is open. Eject it (or press Fn + button 9) before saving from here.', true);
+    else if (hello.errors?.length) banner(`The pad reported problems in its layers.json: <ul>${hello.errors.map(e => `<li>${esc(e)}</li>`).join('')}</ul>`, true);
+    else banner('');
+    if (!isDirty() || confirm('Load the layout from the pad? Your unsaved edits will be replaced.')) await loadFromPad();
+    else renderAll();
+  } catch (e) {
+    if (e.name !== 'NotFoundError') toast('Could not connect: ' + e.message, true);
+    if (port) { try { await port.close(); } catch (_) { } disconnected(); }
+  }
+}
+async function loadFromPad() {
+  const r = await request('GET', 'config');
+  if (setConfigFromText(r.text, 'the pad')) {
+    sel.layer = live.layer >= 0 && live.layer < cfg.layers.length ? live.layer : 0; sel.target = 'layer';
+    renderAll();
+    toast(r.source === 'default' ? 'Loaded the built-in defaults from the pad' : 'Loaded layers.json from the pad');
+  }
+}
+async function saveToPad() {
+  const errs = collectErrors();
+  if (errs.length && !confirm(`${errs.length} problem(s) found (listed under the pad). The pad skips invalid actions. Save anyway?`)) return;
+  const text = currentText() + '\n', bytes = enc.encode(text);
+  $('#btnSave').disabled = true; $('#btnSave').textContent = 'Saving…';
+  try {
+    const r = await request(`PUT ${bytes.length}`, 'saved', 10000, bytes);
+    savedText = currentText();
+    if (r.errors?.length) { banner(`Saved, but the pad reported: <ul>${r.errors.map(e => `<li>${esc(e)}</li>`).join('')}</ul>`, true); toast('Saved with warnings', true); }
+    else { banner(''); toast('Saved. The pad is using the new layout.'); }
+  } catch (e) { toast('Save failed: ' + e.message, true); }
+  renderHeader();
+}
+$('#btnConnect').onclick = connect;
+$('#btnSave').onclick = saveToPad;
+$('#btnLoad').onclick = async () => {
+  if (isDirty() && !confirm('Discard your unsaved edits and reload from the pad?')) return;
+  try { await loadFromPad(); } catch (e) { toast(e.message, true); }
+};
+$('#learn').onchange = () => send($('#learn').checked ? 'MONITOR 2' : 'MONITOR 1').catch(() => { });
+navigator.serial?.addEventListener('disconnect', e => { if (e.target === port) disconnected(); });
+
+// ===========================================================================
+// Start
+// ===========================================================================
+if (!('serial' in navigator)) {
+  banner('This browser can\'t talk to USB serial devices. Use <b>Chrome</b>, <b>Edge</b> or another Chromium browser to connect the pad. You can still edit and download <kbd>layers.json</kbd> here and copy it onto the pad\'s USB drive (Fn + button 9).', true);
+  $('#btnConnect').disabled = true;
+}
+(async () => {
+  let text = null;
+  try { text = await (await fetch('../config/default_layers.json')).text(); } catch (e) { }
+  setConfigFromText(text || JSON.stringify({ layers: [blankLayer(1)] }), 'defaults');
+})();
+</script>
+</body>
+</html>

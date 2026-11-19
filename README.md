@@ -14,13 +14,16 @@ The Pico shows up as a normal USB keyboard and mouse, so no drivers or host soft
 
 ## Features
 
-- **7 layers**, each with its own button and wheel mapping, all defined in one file ([`src/layers.h`](src/layers.h))
+- **Up to 16 layers**, each with its own button and wheel mapping, stored in a `layers.json` file on the pad. No reflashing needed to change them
+- **Two ways to edit the layers**: a **web configurator** (Chrome/Edge, over USB) with live wheel-speed tuning, or the pad opens as a **USB drive** and you edit the file in any text editor
+- **Automatic layer switching**: a small script tells the pad which app is focused (Kdenlive → Kdenlive layer, and so on)
 - **Speed-sensitive jog wheels**: turning slowly is precise (one frame per step), turning faster repeats steps, and spinning switches to a coarser action (for example 1 second per step)
 - **Wheel modes**: key/media/scroll steps, held modifiers (Alt+Tab switcher), mouse X/Y movement
 - **OLED UI** showing the current layer, the wheel functions (they light up while turning, with `x3` / `>>` for acceleration) and a live button map
 - **Layer select** with Fn + wheel or Fn + button; the last used layer is remembered after power-off
 - **Screensaver**: the OLED dims after 30 s and turns off after 5 min to prevent burn-in
 - **Bootloader from the buttons**, for when the enclosure hides BOOTSEL
+- **Watchdog + safe mode**: if the firmware ever hangs, it reboots and skips loading the config, so a bad file can't lock you out
 - A separate **hardware test sketch** for checking wiring
 
 ## Hardware
@@ -120,6 +123,8 @@ Alternatively, copy `.pio/build/pico/firmware.uf2` onto the `RPI-RP2` drive.
 
 The `RPI-RP2` drive will appear. Run `pio run -t upload`, or copy the `.uf2` onto it.
 
+Your `layers.json` lives in a separate flash area, so it survives firmware updates.
+
 ### Hardware test sketch
 
 [`hwtest/main.cpp`](hwtest/main.cpp) scans both I2C buses and shows the wheel angles, magnet status (OK / WEAK / STRONG / NO MAG) and the button states on the OLED and over serial.
@@ -141,11 +146,14 @@ Button 1 (top-left) doubles as **Fn**:
 | Tap button 1 | Its normal action for the current layer (fires on release) |
 | Hold button 1 + turn left wheel | Cycle through layers |
 | Hold button 1 + press button 2…8 | Jump directly to layer 1…7 |
+| Hold button 1 + press button 9 | Open / close the config USB drive |
 | Hold button 1 + button 10 for 3 s | Reboot into the USB bootloader |
 
 While Fn is held, the OLED shows the layer picker.
 
-### Layers
+### Default layers
+
+These are the built-in defaults ([`config/default_layers.json`](config/default_layers.json)). Change them however you like, see [Customising](#customising).
 
 | # | Layer | Left wheel | Right wheel | Buttons 1–5 | Buttons 6–10 |
 |---|---|---|---|---|---|
@@ -165,67 +173,107 @@ While Fn is held, the OLED shows the layer picker.
 
 ## Customising
 
-Everything you'd normally tweak is in two files.
+The key map and all the wheel tuning live in **`layers.json`** on the pad's flash. On first boot the pad writes the built-in defaults there. There are three ways to change it, and none needs a rebuild.
 
-### [`src/layers.h`](src/layers.h): the key map
+### 1. Web configurator (recommended)
 
-```cpp
-{"Kdenlive", "Kden",                                   // name (≤8 chars), short name (≤4)
- wheelSteps("Jog", 48, key(KEY_LEFT_ARROW), key(KEY_RIGHT_ARROW))   // left wheel
-     .accel(4)                                         //   up to 4 steps per detent when turning fast
-     .fast(shift(KEY_LEFT_ARROW), shift(KEY_RIGHT_ARROW)),  // when spinning
- wheelSteps("Zoom", 16, scroll(-1, M_CTRL), scroll(1, M_CTRL)),     // right wheel
- {
-   {"Play", key(' ')}, {"J", key('j')}, ...            // 10 buttons, label ≤4 chars
- }},
+Open [`web/index.html`](web/index.html) in **Chrome or Edge** (WebSerial isn't available in Firefox). Open it straight from disk, or serve the repo root with `python3 -m http.server` and go to `http://localhost:8000/web/`. Then click **Connect pad**.
+
+- Click a key, a wheel or the screen on the pad drawing to edit it
+- **⏺ Rec** records a key combination; **Pick…** has media keys, mouse actions and common shortcuts
+- Add, duplicate, reorder and delete layers, and set which apps each one auto-switches for
+- **Wheel tuning** tab: the acceleration curve as a graph. Turn a wheel on the pad and a dot shows its live speed on the curve, so you can see exactly where acceleration kicks in
+- **Pad selects keys** mode: pressing a key or turning a wheel on the pad selects it in the editor (and the pad stops typing meanwhile)
+- **Save to pad** stores `layers.json` and applies it immediately. **Download** / **Open file…** let you keep copies
+
+### 2. Edit the file on the USB drive
+
+Hold **Fn (button 1) + button 9**. The pad appears as a small USB drive containing `layers.json`, a [`REFERENCE.txt`](config/REFERENCE.txt) with every key name and option, and an `errors.txt` if something didn't parse.
+
+Edit and save `layers.json`, then press **Fn + button 9** again to close the drive. The pad reloads straight away.
+
+> **Don't use Eject / Safely remove in the file manager.** On Linux (and Windows) that powers off
+> the whole USB device, keyboard included, until you replug it, and unsaved flash metadata is lost.
+> Always close the drive with Fn + button 9.
+
+### 3. The JSON format
+
+```jsonc
+{
+  "name": "Kdenlive", "short": "Kden", "apps": ["kdenlive"],
+  "left":  { "label": "Jog", "mode": "steps", "steps": 48, "ccw": "left", "cw": "right",
+             "accel": 4, "fast_ccw": "shift+left", "fast_cw": "shift+right" },
+  "right": { "label": "Zoom", "mode": "steps", "steps": 16, "ccw": "ctrl+scroll_down", "cw": "ctrl+scroll_up" },
+  "buttons": [
+    { "label": "Play", "action": "space" },
+    { "label": "Razr", "action": "shift+r" },
+    ...
+  ]
+}
 ```
 
-**Button actions**
+- **Actions** are key names joined with `+`, modifiers first: `ctrl+shift+z`, `alt+tab`, `f5`, `kp_plus`, `vol_up`, `play_pause`, `mouse_left`, `latch_left` (drag lock), `scroll_down:3`, or just `ctrl` to hold a modifier
+- **Wheel modes**: `steps` (an action every 1/`steps` of a turn), `mouse_x` / `mouse_y` (`px` per turn), `none`. `hold` keeps modifiers down while turning (e.g. `"hold": "alt"` + `tab` = window switcher)
+- `//` comments are allowed
 
-| Helper | Example |
-|---|---|
-| `key(k)` / `key(k, mods)` | `key('j')`, `key(KEY_F5)`, `key(KEY_TAB, M_ALT)` |
-| `ctrl(k)`, `shift(k)`, `alt(k)`, `gui(k)`, `ctrlShift(k)` | `ctrl('z')`, `gui('l')` |
-| `mod(mods)` | `mod(M_CTRL)`: hold Ctrl only |
-| `media(code)` | `media(KEY_PLAY_PAUSE)`, `media(KEY_VOLUME_INCREMENT)` |
-| `mouseBtn(b)` | `mouseBtn(MOUSE_LEFT)` |
-| `mouseLatch(b)` | toggles a mouse button (drag lock) |
-| `scroll(n, mods)` | `scroll(1)` up, `scroll(-1, M_CTRL)` Ctrl+scroll down |
-
-Use lowercase letters: `key('c')`, not `key('C')`, because the uppercase form adds Shift. Key names such as `KEY_LEFT_ARROW` come from the core's [`HID_Keyboard.h`](https://github.com/earlephilhower/arduino-pico/blob/master/libraries/HID_Keyboard/src/HID_Keyboard.h).
-
-**Wheels**
-
-| Helper | Meaning |
-|---|---|
-| `wheelSteps(label, stepsPerRev, ccw, cw, holdMods)` | Fire an action every 1/N of a turn. `holdMods` is held while turning (e.g. `M_ALT` for Alt+Tab) |
-| `.accel(n)` | Repeat each step up to n times when turning fast |
-| `.fast(ccw, cw)` | Use these actions instead when spinning really fast |
-| `wheelMouseX(label, pxPerRev)` / `wheelMouseY(...)` | Move the mouse; negative = reversed |
-| `wheelNone()` | Do nothing |
-
-To add a layer, append another block to `LAYERS[]`. Fn + button jumps to layers 1–8 (buttons 2–9); you can reach more by cycling with the wheel.
+[`config/REFERENCE.txt`](config/REFERENCE.txt) has the full list of key names and options.
 
 > **Keyboard layouts:** keys are sent as US key *positions*. Letters, digits, arrows and F-keys work
-> on most layouts, but symbols (`+ - = [ ]`…) land elsewhere on non-US layouts. Prefer keypad keys
-> (`KEY_KP_PLUS`) or scroll-based shortcuts for those.
+> on most layouts, but symbols (`minus`, `equal`, brackets…) land elsewhere on non-US layouts.
+> Prefer keypad keys (`kp_plus`) or scroll-based shortcuts for those.
 
-### [`src/config.h`](src/config.h): hardware and behaviour
+### Tuning the jog wheels
 
-- Pins, I2C speed (`I2C_HZ`, default 1 MHz; drop to 400 kHz if the OLED or wheels glitch)
-- `INVERT_LEFT` / `INVERT_RIGHT`: flip a wheel's direction (clockwise should be + / down / next)
-- Acceleration thresholds: `ACCEL_START_RPS`, `ACCEL_FULL_RPS`, `FAST_RPS`
-- Fn / bootloader button, debounce, screensaver timings
+Wheel speed is measured in **turns per second** and drives this curve:
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `accel_start` | 0.4 | Below this, every step is exactly one action (frame-accurate) |
+| `accel_full` | 1.5 | At this speed, the wheel's full `accel` multiplier applies |
+| `accel_curve` | 1.0 | Shape of the ramp in between: 1 = linear, 2 = gentle start, 0.5 = kicks in early |
+| `fast_speed` | 1.8 | Above this, wheels with `fast_ccw` / `fast_cw` switch to those (e.g. jump 1 s instead of 1 frame) |
+| `smoothing_ms` | 50 | Speed smoothing. Higher is steadier but slower to react |
+
+These go in `"settings"` and apply to every wheel. Any wheel can override them with its own `accel_start`, `accel_full`, `accel_curve` and `fast_speed`. Per wheel, `accel` sets the max multiplier (steps are repeated up to that many times; mouse modes are sped up by it). The configurator's **Wheel tuning** tab shows all of this as a graph with live readings.
+
+Other settings: `invert_left` / `invert_right`, `hold_release_ms`, `layer_steps`, `brightness`, `dim_after_s`, `sleep_after_s`, `auto_fallback`.
+
+### Automatic layer switching
+
+[`tools/jogwheel-autoswitch.py`](tools/jogwheel-autoswitch.py) watches which window has focus (X11, uses `xprop`) and sends its window class and title to the pad. The pad switches to the first layer whose `apps` list matches:
+
+- `"apps": ["kdenlive"]` matches when the window class contains `kdenlive`
+- `"title:youtube"` matches the window title instead
+- If nothing matches, the pad switches to `settings.auto_fallback` (default `General`). Set it to `""` to stay on the current layer
+
+```bash
+tools/jogwheel-autoswitch.py --verbose    # try it; prints each focused window's class/title
+tools/jogwheel-autoswitch.py --install    # start automatically at login
+```
+
+It needs only Python 3 and `xprop` (`sudo apt install x11-utils`), and your user must be in the `dialout` group. It only opens the serial port briefly to send each update, so it doesn't interfere with the configurator or uploads. Wayland isn't supported yet.
+
+### [`src/config.h`](src/config.h): hardware
+
+Pins, I2C speed (`I2C_HZ`, default 1 MHz; drop to 400 kHz if the OLED or wheels glitch), and which buttons act as Fn / drive / bootloader. These need a rebuild.
 
 ## Project layout
 
 ```
-platformio.ini     build environments: pico (firmware), hwtest (test sketch)
+platformio.ini     build environments: pico (firmware), debug (boot logging), hwtest (test sketch)
+config/
+  default_layers.json  built-in default key map (embedded into the firmware)
+  REFERENCE.txt        key names and options (also copied onto the pad's drive)
 src/
-  main.cpp         firmware: HID output, wheels, buttons, layers, OLED UI
-  actions.h        action / wheel / layer types and helpers
-  layers.h         ← the key map
-  config.h         ← pins and tuning
+  main.cpp         HID output, wheels, buttons, layers, OLED UI
+  keymap.cpp/.h    layers.json parser and data types
+  host.cpp         flash filesystem, USB drive, serial protocol
+  config.h         pins and fixed behaviour
+web/
+  index.html       configurator (WebSerial, single file)
+tools/
+  jogwheel-autoswitch.py   focused-app → layer switcher
+  embed_config.py          build step that embeds config/ into the firmware
 hwtest/
   main.cpp         peripheral test sketch
 3d/
@@ -238,8 +286,12 @@ img/               photos and renders
 | Problem | Fix |
 |---|---|
 | `pio run -t upload` can't find the board | Update `upload_port` in `platformio.ini` (`ls /dev/serial/by-id/`), or use the button bootloader |
-| Wheel turns the wrong way | Toggle `INVERT_LEFT` / `INVERT_RIGHT` in `config.h` |
+| Wheel turns the wrong way | Set `invert_left` / `invert_right` in the configurator's Wheel tuning tab |
 | Wheels on the wrong side | Swap the buses in `encs[]` in `main.cpp`, or swap the wiring |
 | Wheel jittery / jumps | Flash `hwtest` and check the magnet status. Aim for `OK` (not `WEAK`/`STRONG`) by adjusting the magnet distance (~1–3 mm) |
 | OLED shows `(no enc)` | That AS5600 isn't answering. Check its wiring with `hwtest` |
 | Shortcut does nothing | Check the app's shortcut settings. Defaults vary between versions and keyboard layouts |
+| OLED says `N config errors` | Details are in `errors.txt` on the drive (Fn + 9) and in the configurator. Invalid actions are skipped; a file that isn't valid JSON is ignored and the defaults are used |
+| OLED says `SAFE MODE` | The previous boot hung while loading the config, so the pad started on its defaults. Fix or reset the config in the configurator. Run `pio run -e debug -t upload` for a step-by-step boot log |
+| The whole pad disappeared after ejecting its drive | Replug it, and close the drive with Fn + 9 next time instead of Eject |
+| Configurator can't connect | Close anything else using the serial port (e.g. `pio device monitor`). Chrome/Edge only |
