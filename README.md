@@ -177,7 +177,9 @@ The key map and all the wheel tuning live in **`layers.json`** on the pad's flas
 
 ### 1. Web configurator (recommended)
 
-Open [`web/index.html`](web/index.html) in **Chrome or Edge** (WebSerial isn't available in Firefox). Open it straight from disk, or serve the repo root with `python3 -m http.server` and go to `http://localhost:8000/web/`. Then click **Connect pad**.
+**👉 [Open the configurator](https://hrafnkell.github.io/jogwheel-macropad/web/)** in **Chrome or Edge** (WebSerial isn't available in Firefox) and click **Connect pad**.
+
+It's a single file, [`web/index.html`](web/index.html), so it also works offline: open it from disk, or serve the repo root with `python3 -m http.server` and go to `http://localhost:8000/web/`.
 
 - Click a key, a wheel or the screen on the pad drawing to edit it
 - **⏺ Rec** records a key combination; **Pick…** has media keys, mouse actions and common shortcuts
