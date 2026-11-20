@@ -889,6 +889,7 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () 
 // WebSerial
 // ===========================================================================
 let port = null, writer = null, reader = null;
+let closing = false, readDone = null;  // clean shutdown: see closePort()
 const waiters = [];
 const enc = new TextEncoder();
 
@@ -939,7 +940,9 @@ function scheduleLiveDraw() {
 async function readLoop() {
   const dec = new TextDecoder(); let buf = '';
   try {
-    while (port && port.readable) {
+    // Re-acquire a reader only after recoverable errors (e.g. buffer overrun),
+    // never while closing: a fresh pending read racing port.close() can crash Chrome.
+    while (port && port.readable && !closing) {
       reader = port.readable.getReader();
       try {
         while (true) {
@@ -956,7 +959,27 @@ async function readLoop() {
       } finally { reader.releaseLock(); reader = null; }
     }
   } catch (e) { console.warn(e); }
-  disconnected();
+  if (!closing) disconnected();
+}
+
+// Close in a strict order: stop telemetry, flush + close the writer, cancel the
+// read and wait for the read loop to exit, and only then close the port.
+async function closePort() {
+  const p = port;
+  if (!p || closing) return;
+  closing = true;
+  $('#btnConnect').disabled = true;
+  try {
+    try { await send('MONITOR 0'); } catch (e) { }
+    if (writer) { try { await writer.close(); } catch (e) { } try { writer.releaseLock(); } catch (e) { } writer = null; }
+    try { await reader?.cancel(); } catch (e) { }
+    try { await readDone; } catch (e) { }
+    try { await p.close(); } catch (e) { console.warn('close', e); }
+  } finally {
+    closing = false;
+    $('#btnConnect').disabled = false;
+    disconnected();
+  }
 }
 function disconnected() {
   if (!port) return;
@@ -967,17 +990,12 @@ function disconnected() {
   if (cfg) renderAll();
 }
 async function connect() {
-  if (port) {  // disconnect
-    try { await send('MONITOR 0'); } catch (e) { }
-    const p = port; try { await reader?.cancel(); } catch (e) { } try { writer?.releaseLock(); } catch (e) { }
-    try { await p.close(); } catch (e) { }
-    disconnected(); return;
-  }
+  if (port) { await closePort(); return; }
   try {
     const p = await navigator.serial.requestPort({ filters: [{ usbVendorId: 0x2e8a }] });
     await p.open({ baudRate: 115200 });
     port = p; writer = p.writable.getWriter();
-    readLoop();
+    readDone = readLoop();
     const hello = await request('HELLO', 'hello');
     $('#connDot').className = 'dot on';
     $('#connText').textContent = `Connected · firmware ${hello.fw}${hello.drive ? ' · USB drive open' : ''}`;
@@ -991,7 +1009,7 @@ async function connect() {
     else renderAll();
   } catch (e) {
     if (e.name !== 'NotFoundError') toast('Could not connect: ' + e.message, true);
-    if (port) { try { await port.close(); } catch (_) { } disconnected(); }
+    await closePort();
   }
 }
 async function loadFromPad() {

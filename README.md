@@ -35,7 +35,7 @@ The Pico shows up as a normal USB keyboard and mouse, so no drivers or host soft
 | 2× 3.75 × 3.75 × 2.8 mm magnet | One per knob, see [Knobs and magnets](#knobs-and-magnets) |
 | SSD1306 128×64 OLED (I2C, `0x3C`) | Shares I2C0 with the right wheel |
 | 10× Kailh Choc v1 (low profile) switches + keycaps | Snap into the top plate; each connects its GPIO to GND when pressed (internal pull-ups) |
-| 2× ball bearings | One per knob (see the photo below) |
+| 2× 608 skateboard bearings (8 × 22 × 7 mm) | One per knob; standard skateboard / fidget-spinner bearings |
 | Screws + heat-set inserts | Hold the top plate to the base |
 
 ### 3D-printed case
@@ -59,7 +59,7 @@ Everything prints **without supports**.
 
 ![Knob removed, showing the bearing and the AS5600 underneath](img/knoboff.jpg)
 
-Each knob turns on a ball bearing and carries a small **3.75 × 3.75 × 2.8 mm magnet** in its centre, directly above the AS5600.
+Each knob turns on a standard **608 skateboard bearing (8 × 22 × 7 mm)** and carries a small **3.75 × 3.75 × 2.8 mm magnet** in its centre, directly above the AS5600.
 
 The magnet is **push-fit sideways** into the knob. The AS5600 needs the field to rotate *in the plane of the chip*, so the magnet's north and south poles must sit side by side, parallel to the sensor, not one above the other. A normal block magnet is magnetised through its thickness, so inserting it on its side puts the poles in the right orientation without needing a diametric magnet.
 
