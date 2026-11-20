@@ -175,7 +175,7 @@ These are the built-in defaults ([`config/default_layers.json`](config/default_l
 
 The key map and all the wheel tuning live in **`layers.json`** on the pad's flash. On first boot the pad writes the built-in defaults there. There are several ways to change it, and none needs a rebuild.
 
-### Desktop app (Linux)
+### Desktop app (Linux and Windows)
 
 [`desktop/`](desktop) is a native configurator built with [GPUI](https://gpui.rs). It has the same features as the web configurator and also handles automatic layer switching itself, so you don't need the Python script while it's open.
 
@@ -186,16 +186,21 @@ jogwheel                   # open the configurator
 jogwheel --autoswitch -v   # no window: only switch layers to match the focused app
 ```
 
-Building needs Rust (via [rustup](https://rustup.rs)) and the X11/Wayland dev libraries. On Debian/Ubuntu:
-`sudo apt install libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan-dev libfontconfig-dev libfreetype-dev libx11-xcb-dev libxcb1-dev`.
+Building needs Rust (via [rustup](https://rustup.rs)).
+- **Linux** also needs the X11/Wayland dev libraries. On Debian/Ubuntu:
+  `sudo apt install libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan-dev libfontconfig-dev libfreetype-dev libx11-xcb-dev libxcb1-dev`
+- **Windows** needs the Visual Studio C++ build tools (rustup offers to install them). `cargo install --path .` gives you `jogwheel.exe`. The pad is found by its USB ID on whichever COM port it gets.
+- Every push that touches `desktop/` builds both versions with GitHub Actions; the `.exe` and the Linux binary can be downloaded from the run's **Artifacts**.
 
 - It finds the pad automatically and reconnects after unplugging or a firmware upload. **Disconnect** releases the port
 - **Auto-switch** tab:
   - turn switching on or off
   - see the focused window's class, title and which layer it matches
   - add apps you've recently used to the selected layer with one click
-  - tick *start in the background at login* so `jogwheel --autoswitch` keeps switching layers after you close the window
-- It opens the port without locking it, so `pio run -t upload` works while it's running
+  - tick *start in the background at login* so `jogwheel --autoswitch` keeps switching layers after you close the window (Linux: `~/.config/autostart`; Windows: the `HKCU\…\Run` registry key)
+- On Linux it opens the port without locking it, so `pio run -t upload` works while it's running. Windows always locks COM ports, so click **Disconnect** before uploading firmware or using the web configurator
+
+On Windows the "class" sent to the pad is the program name followed by the window class, e.g. `kdenlive Qt5152QWindowIcon`, `Resolve …` or `firefox MozillaWindowClass`. Rules like `"apps": ["kdenlive"]` therefore work on both systems. The Auto-switch tab shows exactly what's being sent.
 
 ### Web configurator
 
@@ -279,7 +284,7 @@ tools/jogwheel-autoswitch.py --install    # start automatically at login
 
 It needs only Python 3 and `xprop` (`sudo apt install x11-utils`), and your user must be in the `dialout` group. It only opens the serial port briefly to send each update, so it doesn't interfere with the configurator or uploads. Wayland isn't supported yet.
 
-The [desktop app](#desktop-app-linux) does the same job built in: while its window is open it switches layers itself, and `jogwheel --autoswitch` replaces the script (the app's *start at login* option installs it in the same autostart slot). The desktop version also follows title changes within a window, so `title:` rules keep up when you switch browser tabs.
+The [desktop app](#desktop-app-linux-and-windows) does the same job built in, on Linux (X11) and Windows: while its window is open it switches layers itself, and `jogwheel --autoswitch` replaces the script (on Linux, the app's *start at login* option uses the same autostart file as the script, replacing it). The desktop version also follows title changes within a window, so `title:` rules keep up when you switch browser tabs.
 
 ### [`src/config.h`](src/config.h): hardware
 

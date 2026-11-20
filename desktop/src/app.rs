@@ -266,7 +266,7 @@ impl JogApp {
         match ev {
             SerialEvent::Connected(path) => {
                 self.connected = true;
-                self.conn_text = format!("Connecting… {}", path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
+                self.conn_text = format!("Connecting… {}", crate::serial::port_label(&path));
                 let hello = self.request("HELLO", "hello", None, Duration::from_secs(4), cx);
                 cx.spawn_in(window, async move |this, cx| {
                     let r = hello.await;

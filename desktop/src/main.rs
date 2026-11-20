@@ -2,6 +2,9 @@
 //!
 //!   jogwheel                 open the configurator
 //!   jogwheel --autoswitch    no window: just switch layers to match the focused app
+// No console window on Windows (release builds); --help / -v attach to the
+// terminal they were started from.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 mod accel;
 mod actions;
 mod app;
@@ -13,6 +16,10 @@ use gpui_kit::*;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    #[cfg(windows)]
+    if args.iter().any(|a| matches!(a.as_str(), "-h" | "--help" | "-v" | "--verbose")) {
+        unsafe { windows_sys::Win32::System::Console::AttachConsole(windows_sys::Win32::System::Console::ATTACH_PARENT_PROCESS) };
+    }
     if args.iter().any(|a| a == "--help" || a == "-h") {
         println!(
             "jogwheel {}\n\n  jogwheel                 open the configurator\n  jogwheel --autoswitch    switch layers to match the focused app (no window)\n      -v, --verbose        print every focused window",

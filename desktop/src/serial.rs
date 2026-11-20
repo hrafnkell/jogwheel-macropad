@@ -1,37 +1,58 @@
 //! USB serial link to the pad (JSON lines, see src/host.cpp).
 //!
-//! A background thread finds the pad, opens it (non-exclusively, so firmware
-//! uploads and the headless auto-switcher still work), reads JSON lines and
+//! A background thread finds the pad, opens it (on Linux non-exclusively, so
+//! firmware uploads and the headless auto-switcher still work; Windows COM
+//! ports are always exclusive), reads JSON lines and
 //! reconnects after unplugging. Writes go through a per-connection writer
 //! thread so the UI never blocks on the port.
 use serde_json::Value;
 use std::io::{ErrorKind, Read, Write};
-use std::path::{Path, PathBuf};
+use serialport::SerialPort;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::Duration;
 
-pub const PORT_DIR: &str = "/dev/serial/by-id";
-pub const PORT_PREFIX: &str = "usb-Raspberry_Pi_Pico_";
+/// Raspberry Pi's USB vendor ID (the Pico's CDC serial port)
+#[cfg(not(target_os = "linux"))]
+pub const PICO_VID: u16 = 0x2E8A;
 
-/// The pad's serial port, if plugged in.
-pub fn find_port() -> Option<PathBuf> {
-    let mut v: Vec<PathBuf> = std::fs::read_dir(PORT_DIR)
+/// The pad's serial port name, if plugged in.
+#[cfg(target_os = "linux")]
+pub fn find_port() -> Option<String> {
+    // Stable names, and no libudev needed
+    let mut v: Vec<String> = std::fs::read_dir("/dev/serial/by-id")
         .ok()?
         .filter_map(|e| e.ok())
         .map(|e| e.path())
         .filter(|p| {
             let n = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            n.starts_with(PORT_PREFIX) && n.ends_with("-if00")
+            n.starts_with("usb-Raspberry_Pi_Pico_") && n.ends_with("-if00")
         })
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect();
+    v.sort();
+    v.into_iter().next()
+}
+#[cfg(not(target_os = "linux"))]
+pub fn find_port() -> Option<String> {
+    let mut v: Vec<String> = serialport::available_ports()
+        .ok()?
+        .into_iter()
+        .filter(|p| matches!(&p.port_type, serialport::SerialPortType::UsbPort(u) if u.vid == PICO_VID))
+        .map(|p| p.port_name)
         .collect();
     v.sort();
     v.into_iter().next()
 }
 
+/// Short name for display ("COM5", or the by-id file name)
+pub fn port_label(name: &str) -> String {
+    name.rsplit('/').next().unwrap_or(name).to_string()
+}
+
 #[derive(Debug)]
 pub enum SerialEvent {
-    Connected(PathBuf),
+    Connected(String),
     Disconnected,
     Message(Value),
     Log(String),
@@ -93,15 +114,15 @@ impl SerialLink {
                     }
                 }
                 Err(e) => {
-                    let _ = tx.unbounded_send(SerialEvent::Log(format!("open {}: {e}", path.display())));
+                    let _ = tx.unbounded_send(SerialEvent::Log(format!("open {path}: {e}")));
                     std::thread::sleep(Duration::from_millis(1500));
                 }
             }
         }
     }
 
-    fn session(&self, mut port: serialport::TTYPort, path: &Path, tx: &futures::channel::mpsc::UnboundedSender<SerialEvent>) {
-        let Ok(mut writer) = port.try_clone_native() else { return };
+    fn session(&self, mut port: Box<dyn SerialPort>, path: &str, tx: &futures::channel::mpsc::UnboundedSender<SerialEvent>) {
+        let Ok(mut writer) = port.try_clone() else { return };
         let (wtx, wrx) = mpsc::channel::<Vec<u8>>();
         let failed = Arc::new(AtomicBool::new(false));
         let f2 = failed.clone();
@@ -117,7 +138,7 @@ impl SerialLink {
             }
         });
         *self.out.lock().unwrap() = Some(wtx);
-        let _ = tx.unbounded_send(SerialEvent::Connected(path.to_path_buf()));
+        let _ = tx.unbounded_send(SerialEvent::Connected(path.to_string()));
 
         let mut buf = [0u8; 4096];
         let mut line: Vec<u8> = Vec::new();
@@ -149,8 +170,9 @@ impl SerialLink {
                 Err(e) if e.kind() == ErrorKind::TimedOut || e.kind() == ErrorKind::Interrupted => {}
                 Err(_) => break,
             }
-            if !path.exists() {
-                break;
+            #[cfg(unix)]
+            if !std::path::Path::new(path).exists() {
+                break; // unplugged (reads can keep timing out instead of failing)
             }
         }
         if !self.enabled() {
@@ -161,10 +183,19 @@ impl SerialLink {
     }
 }
 
-fn open(path: &Path) -> serialport::Result<serialport::TTYPort> {
+fn open(path: &str) -> serialport::Result<Box<dyn SerialPort>> {
     // 115200 matters: closing the port at 1200 baud reboots the Pico into its bootloader.
-    let mut p = serialport::new(path.to_string_lossy(), 115_200).timeout(Duration::from_millis(100)).open_native()?;
-    p.set_exclusive(false)?;
+    let b = serialport::new(path, 115_200).timeout(Duration::from_millis(100));
+    #[cfg(unix)]
+    let mut p: Box<dyn SerialPort> = {
+        let mut p = b.open_native()?;
+        p.set_exclusive(false)?;
+        Box::new(p)
+    };
+    #[cfg(not(unix))]
+    let mut p = b.open()?;
+    // The pad only talks to a host that raises DTR (Linux does on open, Windows doesn't)
+    p.write_data_terminal_ready(true)?;
     Ok(p)
 }
 
