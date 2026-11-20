@@ -173,9 +173,31 @@ These are the built-in defaults ([`config/default_layers.json`](config/default_l
 
 ## Customising
 
-The key map and all the wheel tuning live in **`layers.json`** on the pad's flash. On first boot the pad writes the built-in defaults there. There are three ways to change it, and none needs a rebuild.
+The key map and all the wheel tuning live in **`layers.json`** on the pad's flash. On first boot the pad writes the built-in defaults there. There are several ways to change it, and none needs a rebuild.
 
-### 1. Web configurator (recommended)
+### Desktop app (Linux)
+
+[`desktop/`](desktop) is a native configurator built with [GPUI](https://gpui.rs). It has the same features as the web configurator and also handles automatic layer switching itself, so you don't need the Python script while it's open.
+
+```bash
+cd desktop
+cargo install --path .     # installs ~/.cargo/bin/jogwheel
+jogwheel                   # open the configurator
+jogwheel --autoswitch -v   # no window: only switch layers to match the focused app
+```
+
+Building needs Rust (via [rustup](https://rustup.rs)) and the X11/Wayland dev libraries. On Debian/Ubuntu:
+`sudo apt install libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan-dev libfontconfig-dev libfreetype-dev libx11-xcb-dev libxcb1-dev`.
+
+- It finds the pad automatically and reconnects after unplugging or a firmware upload. **Disconnect** releases the port
+- **Auto-switch** tab:
+  - turn switching on or off
+  - see the focused window's class, title and which layer it matches
+  - add apps you've recently used to the selected layer with one click
+  - tick *start in the background at login* so `jogwheel --autoswitch` keeps switching layers after you close the window
+- It opens the port without locking it, so `pio run -t upload` works while it's running
+
+### Web configurator
 
 **👉 [Open the configurator](https://hrafnkell.github.io/jogwheel-macropad/web/)** in **Chrome or Edge** (WebSerial isn't available in Firefox) and click **Connect pad**.
 
@@ -189,7 +211,7 @@ It's a single file, [`web/index.html`](web/index.html), so it also works offline
 - **Pad selects keys** mode: pressing a key or turning a wheel on the pad selects it in the editor (and the pad stops typing meanwhile)
 - **Save to pad** stores `layers.json` and applies it immediately. **Download** / **Open file…** let you keep copies
 
-### 2. Edit the file on the USB drive
+### Edit the file on the USB drive
 
 Hold **Fn (button 1) + button 9**. The pad appears as a small USB drive containing `layers.json`, a [`REFERENCE.txt`](config/REFERENCE.txt) with every key name and option, and an `errors.txt` if something didn't parse.
 
@@ -199,7 +221,7 @@ Edit and save `layers.json`, then press **Fn + button 9** again to close the dri
 > the whole USB device, keyboard included, until you replug it, and unsaved flash metadata is lost.
 > Always close the drive with Fn + button 9.
 
-### 3. The JSON format
+### The JSON format
 
 ```jsonc
 {
@@ -257,6 +279,8 @@ tools/jogwheel-autoswitch.py --install    # start automatically at login
 
 It needs only Python 3 and `xprop` (`sudo apt install x11-utils`), and your user must be in the `dialout` group. It only opens the serial port briefly to send each update, so it doesn't interfere with the configurator or uploads. Wayland isn't supported yet.
 
+The [desktop app](#desktop-app-linux) does the same job built in: while its window is open it switches layers itself, and `jogwheel --autoswitch` replaces the script (the app's *start at login* option installs it in the same autostart slot). The desktop version also follows title changes within a window, so `title:` rules keep up when you switch browser tabs.
+
 ### [`src/config.h`](src/config.h): hardware
 
 Pins, I2C speed (`I2C_HZ`, default 1 MHz; drop to 400 kHz if the OLED or wheels glitch), and which buttons act as Fn / drive / bootloader. These need a rebuild.
@@ -275,6 +299,7 @@ src/
   config.h         pins and fixed behaviour
 web/
   index.html       configurator (WebSerial, single file)
+desktop/           native configurator + auto layer switcher (Rust, GPUI)
 tools/
   jogwheel-autoswitch.py   focused-app → layer switcher
   embed_config.py          build step that embeds config/ into the firmware
