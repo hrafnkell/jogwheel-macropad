@@ -240,8 +240,9 @@ mod win {
     }
 }
 
-/// Autostart entry that runs `jogwheel --autoswitch` at login: an XDG
-/// autostart file on Linux, the HKCU Run key on Windows.
+/// Autostart entry that runs `jogwheel <arg>` at login (`--tray` for the app
+/// in the tray, `--autoswitch` for the headless switcher): an XDG autostart
+/// file on Linux, the HKCU Run key on Windows.
 #[cfg(not(windows))]
 pub fn autostart_path() -> Option<std::path::PathBuf> {
     let base = std::env::var_os("XDG_CONFIG_HOME")
@@ -251,10 +252,10 @@ pub fn autostart_path() -> Option<std::path::PathBuf> {
 }
 #[cfg(not(windows))]
 pub fn autostart_installed() -> bool {
-    autostart_path().and_then(|p| std::fs::read_to_string(p).ok()).is_some_and(|s| s.contains("--autoswitch"))
+    autostart_path().and_then(|p| std::fs::read_to_string(p).ok()).is_some_and(|s| s.contains("--autoswitch") || s.contains("--tray"))
 }
 #[cfg(not(windows))]
-pub fn set_autostart(on: bool) -> anyhow::Result<()> {
+pub fn set_autostart(on: bool, arg: &str) -> anyhow::Result<()> {
     let path = autostart_path().ok_or_else(|| anyhow::anyhow!("no home directory"))?;
     if on {
         let exe = std::env::current_exe()?;
@@ -263,7 +264,7 @@ pub fn set_autostart(on: bool) -> anyhow::Result<()> {
             &path,
             format!(
                 "[Desktop Entry]\nType=Application\nName=Jogwheel auto layer switch\n\
-                 Comment=Switch macropad layers based on the focused app\nExec=\"{}\" --autoswitch\n\
+                 Comment=Switch macropad layers based on the focused app\nExec=\"{}\" {arg}\nIcon=jogwheel\n\
                  X-GNOME-Autostart-enabled=true\nNoDisplay=false\n",
                 exe.display()
             ),
@@ -287,10 +288,10 @@ pub fn autostart_installed() -> bool {
     reg(&["query", RUN_KEY, "/v", "JogwheelAutoswitch"]).is_ok_and(|o| o.status.success())
 }
 #[cfg(windows)]
-pub fn set_autostart(on: bool) -> anyhow::Result<()> {
+pub fn set_autostart(on: bool, arg: &str) -> anyhow::Result<()> {
     let out = if on {
         let exe = std::env::current_exe()?;
-        reg(&["add", RUN_KEY, "/v", "JogwheelAutoswitch", "/t", "REG_SZ", "/d", &format!("\"{}\" --autoswitch", exe.display()), "/f"])?
+        reg(&["add", RUN_KEY, "/v", "JogwheelAutoswitch", "/t", "REG_SZ", "/d", &format!("\"{}\" {arg}", exe.display()), "/f"])?
     } else {
         if !autostart_installed() {
             return Ok(());

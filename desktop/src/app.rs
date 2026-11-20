@@ -5,6 +5,8 @@ use crate::actions::*;
 use crate::autoswitch::{self, FocusInfo};
 use crate::model::*;
 use crate::serial::{SerialEvent, SerialLink};
+use crate::tray::{TrayCmd, TrayHandle, TrayState};
+use crate::winctl;
 use futures::StreamExt;
 use futures::channel::oneshot;
 use gpui_kit::component::button::{Button, ButtonVariants};
@@ -87,13 +89,16 @@ pub struct JogApp {
     focused: Option<FocusInfo>,
     recent: Vec<FocusInfo>,
     last_file: Option<PathBuf>,
+    tray: Option<TrayHandle>,
+    tray_state: TrayState,
+    hidden: bool,
     _subs: Vec<Subscription>,
 }
 
 const BTN_GPIO: [u8; NUM_BUTTONS] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 impl JogApp {
-    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(start_hidden: bool, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let (link, mut events) = SerialLink::start();
         // Serial events -> UI
         cx.spawn_in(window, async move |this, cx| {
@@ -135,6 +140,50 @@ impl JogApp {
             }
         });
 
+        // Tray icon (if the desktop has a tray and we can hide our window)
+        let tray_state = TrayState { auto: true, link_enabled: true, connected: false };
+        let (ttx, mut trx) = futures::channel::mpsc::unbounded::<TrayCmd>();
+        let ttx_min = ttx.clone();
+        let tray = if winctl::can_hide(window) { crate::tray::start(tray_state, ttx) } else { None };
+        if tray.is_some() {
+            cx.spawn_in(window, async move |this, cx| {
+                while let Some(cmd) = trx.next().await {
+                    if this.update_in(cx, |this, window, cx| this.on_tray(cmd, window, cx)).is_err() {
+                        break;
+                    }
+                }
+            })
+            .detach();
+            // Close button -> tray
+            let weak = cx.entity().downgrade();
+            window.on_window_should_close(cx, move |window, cx| match weak.upgrade() {
+                Some(app) => !app.update(cx, |this, cx| this.hide_to_tray(window, cx)),
+                None => true,
+            });
+        }
+        // Minimize -> tray (only a real minimize, not another workspace)
+        if tray.is_some() {
+            let tx = ttx_min.clone();
+            winctl::watch_minimize(window, move || {
+                let _ = tx.unbounded_send(TrayCmd::Hide);
+            });
+        }
+        let weak = cx.entity().downgrade();
+        let vis_sub = window.observe_window_visibility(move |vis, window, cx| {
+            if vis == WindowVisibility::Hidden && winctl::is_minimized(window) {
+                if let Some(app) = weak.upgrade() {
+                    app.update(cx, |this, cx| this.hide_to_tray(window, cx));
+                }
+            }
+        });
+        let hidden = start_hidden && tray.is_some();
+        if hidden {
+            // Not every platform honours `show: false`; withdraw once it exists
+            window.on_next_frame(|window, _| winctl::hide(window));
+        } else if start_hidden {
+            winctl::show(window); // no tray to live in: show the window after all
+        }
+
         let json = cx.new(|cx| EditorState::new(window, cx));
         let cfg = Config::defaults();
         let saved_text = cfg.to_text();
@@ -166,12 +215,73 @@ impl JogApp {
             focused: None,
             recent: vec![],
             last_file: None,
-            _subs: vec![rec_sub],
+            tray,
+            tray_state,
+            hidden,
+            _subs: vec![rec_sub, vis_sub],
         }
     }
 
     fn text(&self) -> String {
         self.cfg.to_text()
+    }
+
+    // ---- Tray ------------------------------------------------------------------
+    /// Hide the window to the tray. Returns false when there is no tray (the
+    /// window then closes / minimizes normally).
+    fn hide_to_tray(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.tray.is_none() {
+            return false;
+        }
+        winctl::hide(window);
+        self.hidden = true;
+        self.recording = None;
+        if self.learn {
+            self.learn = false;
+        }
+        self.link.send_line("MONITOR 0"); // no live telemetry needed while hidden
+        cx.notify();
+        true
+    }
+    fn show_from_tray(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        winctl::show(window);
+        self.hidden = false;
+        self.link.send_line("MONITOR 1");
+        cx.notify();
+    }
+    fn on_tray(&mut self, cmd: TrayCmd, window: &mut Window, cx: &mut Context<Self>) {
+        match cmd {
+            TrayCmd::Show => self.show_from_tray(window, cx),
+            TrayCmd::Hide => {
+                if !self.hidden {
+                    self.hide_to_tray(window, cx);
+                }
+            }
+            TrayCmd::ToggleAuto => {
+                self.auto_enabled = !self.auto_enabled;
+                self.send_focus();
+            }
+            TrayCmd::ToggleConnection => self.toggle_connection(cx),
+            TrayCmd::Quit => {
+                if self.dirty() {
+                    self.show_from_tray(window, cx);
+                    self.confirm("Quit and discard your unsaved edits?", "Quit", window, cx, |_, _, cx| cx.quit());
+                } else {
+                    cx.quit();
+                }
+            }
+        }
+        self.sync_tray();
+        cx.notify();
+    }
+    fn sync_tray(&mut self) {
+        let s = TrayState { auto: self.auto_enabled, link_enabled: self.link.enabled(), connected: self.connected };
+        if s != self.tray_state {
+            self.tray_state = s;
+            if let Some(t) = &self.tray {
+                t.update(s);
+            }
+        }
     }
     fn dirty(&self) -> bool {
         self.text() != self.saved_text
@@ -285,6 +395,7 @@ impl JogApp {
             SerialEvent::Log(s) => eprintln!("[pad] {s}"),
             SerialEvent::Message(m) => self.on_message(m, cx),
         }
+        self.sync_tray();
         cx.notify();
     }
 
@@ -302,7 +413,7 @@ impl JogApp {
         let drive = hello["drive"].as_bool().unwrap_or(false);
         self.conn_text = format!("Connected · firmware {}{}", hello["fw"].as_str().unwrap_or("?"), if drive { " · USB drive open" } else { "" });
         self.live.layer = hello["layer"].as_u64().map(|v| v as usize);
-        self.link.send_line(if self.learn { "MONITOR 2" } else { "MONITOR 1" });
+        self.link.send_line(if self.hidden { "MONITOR 0" } else if self.learn { "MONITOR 2" } else { "MONITOR 1" });
         let errors: Vec<String> = hello["errors"].as_array().map(|a| a.iter().filter_map(|e| e.as_str().map(String::from)).collect()).unwrap_or_default();
         self.banner = if drive {
             Some(("The pad's USB drive is open. Close it with Fn + button 9 before saving from here.".into(), true))
@@ -431,6 +542,7 @@ impl JogApp {
     }
 
     fn toggle_connection(&mut self, cx: &mut Context<Self>) {
+        self.tray_state.link_enabled = !self.link.enabled(); // force a tray refresh below
         if self.link.enabled() {
             self.link.set_enabled(false);
             self.conn_text = "Disconnecting…".into();
@@ -1610,6 +1722,7 @@ impl JogApp {
             })
             .collect();
         let focused = self.focused.clone();
+        let has_tray = self.tray.is_some();
         div()
             .v_flex()
             .gap_3()
@@ -1620,21 +1733,22 @@ impl JogApp {
                     .on_click(cx.listener(|this, c: &bool, _, cx| {
                         this.auto_enabled = *c;
                         this.send_focus();
+                        this.sync_tray();
                         cx.notify();
                     })),
             )
             .child(hint("While this window is open it does the switching itself. Each layer's \"apps\" list decides which apps it is for; the matching happens on the pad, using its saved layers.json.", &t))
             .child(
                 Checkbox::new("autostart")
-                    .label("Also switch layers when this app is closed (start in the background at login)")
+                    .label(if has_tray { "Start Jogwheel in the tray at login" } else { "Switch layers at login, without opening this window" })
                     .checked(self.autostart)
                     .on_click(cx.listener(|this, c: &bool, window, cx| {
-                        match autoswitch::set_autostart(*c) {
+                        let arg = if this.tray.is_some() { "--tray" } else { "--autoswitch" };
+                        match autoswitch::set_autostart(*c, arg) {
                             Ok(()) => {
                                 this.autostart = *c;
                                 if *c {
-                                    let started = std::env::current_exe().ok().and_then(|exe| std::process::Command::new(exe).arg("--autoswitch").spawn().ok()).is_some();
-                                    this.toast(if started { "Background switching started, and will start at every login" } else { "Will start at your next login" }, false, window, cx);
+                                    this.toast("Jogwheel will start at every login", false, window, cx);
                                 }
                             }
                             Err(e) => this.toast(format!("Could not change autostart: {e}"), true, window, cx),
@@ -1642,7 +1756,14 @@ impl JogApp {
                         cx.notify();
                     })),
             )
-            .child(hint("Runs `jogwheel --autoswitch`: no window, it only reports the focused app to the pad and never holds its port.", &t))
+            .child(hint(
+                if has_tray {
+                    "Closing or minimizing the window keeps Jogwheel running in the tray, still switching layers. Quit from the tray icon's menu."
+                } else {
+                    "No system tray was found, so this runs jogwheel --autoswitch: no window, it only reports the focused app to the pad."
+                },
+                &t,
+            ))
             .when_some(self.auto_error.clone(), |d, e| d.child(err_text(e, &t)))
             .child(div().font_weight(FontWeight::SEMIBOLD).mt_2().child("Focused app"))
             .child(match focused {

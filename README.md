@@ -181,10 +181,14 @@ The key map and all the wheel tuning live in **`layers.json`** on the pad's flas
 
 ```bash
 cd desktop
-cargo install --path .     # installs ~/.cargo/bin/jogwheel
+cargo install --path .     # installs ~/.cargo/bin/jogwheel (jogwheel.exe on Windows)
+jogwheel --install         # app menu entry + desktop shortcut, with the app icon
 jogwheel                   # open the configurator
-jogwheel --autoswitch -v   # no window: only switch layers to match the focused app
+jogwheel --tray            # start hidden in the system tray
+jogwheel --autoswitch -v   # no window or tray: only switch layers to match the focused app
 ```
+
+![Jogwheel icon](desktop/assets/icon-128.png)
 
 Building needs Rust (via [rustup](https://rustup.rs)).
 - **Linux** also needs the X11/Wayland dev libraries. On Debian/Ubuntu:
@@ -193,11 +197,12 @@ Building needs Rust (via [rustup](https://rustup.rs)).
 - Every push that touches `desktop/` builds both versions with GitHub Actions; the `.exe` and the Linux binary can be downloaded from the run's **Artifacts**.
 
 - It finds the pad automatically and reconnects after unplugging or a firmware upload. **Disconnect** releases the port
+- **System tray**: closing or minimizing the window hides it to the tray, and it keeps switching layers. Click the tray icon to bring the window back. Its menu shows whether the pad is connected, toggles auto-switching, connects/disconnects the pad, and quits. Without a tray (e.g. GNOME without the AppIndicator extension) the window closes and minimizes normally
 - **Auto-switch** tab:
   - turn switching on or off
   - see the focused window's class, title and which layer it matches
   - add apps you've recently used to the selected layer with one click
-  - tick *start in the background at login* so `jogwheel --autoswitch` keeps switching layers after you close the window (Linux: `~/.config/autostart`; Windows: the `HKCU\…\Run` registry key)
+  - tick *start in the tray at login* (runs `jogwheel --tray`; Linux: `~/.config/autostart`, Windows: the `HKCU\…\Run` registry key)
 - On Linux it opens the port without locking it, so `pio run -t upload` works while it's running. Windows always locks COM ports, so click **Disconnect** before uploading firmware or using the web configurator
 
 On Windows the "class" sent to the pad is the program name followed by the window class, e.g. `kdenlive Qt5152QWindowIcon`, `Resolve …` or `firefox MozillaWindowClass`. Rules like `"apps": ["kdenlive"]` therefore work on both systems. The Auto-switch tab shows exactly what's being sent.
